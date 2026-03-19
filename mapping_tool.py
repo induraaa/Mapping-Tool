@@ -282,20 +282,46 @@ def get_site_value(site: dict, mkey: str) -> float | None:
 
 
 def si_fmt(v: float | None) -> str:
-    """Format a float with SI prefix (p, n, µ, m, k, M …)."""
+    """
+    Format a float using the largest SI prefix where |scaled| is in [0.1, 1000).
+    Never uses scientific notation.
+    Examples: 3e-13 → '0.3p',  14.3e-12 → '14.3p',  25e-15 → '25f',
+              7.21 → '7.21',   -0.938 → '-0.938',  100e-9 → '100n'
+    """
     if v is None or not math.isfinite(v):
         return 'N/A'
     if v == 0:
         return '0'
+
+    prefixes = [
+        (1e15, 'P'), (1e12, 'T'), (1e9,  'G'), (1e6,  'M'), (1e3,  'k'),
+        (1e0,  ''),  (1e-3, 'm'), (1e-6, 'µ'), (1e-9, 'n'), (1e-12,'p'),
+        (1e-15,'f'), (1e-18,'a'),
+    ]
+
     av = abs(v)
-    for factor, suffix in ((1e12,'T'),(1e9,'G'),(1e6,'M'),(1e3,'k'),
-                           (1,''),  (1e-3,'m'),(1e-6,'µ'),(1e-9,'n'),
-                           (1e-12,'p'),(1e-15,'f')):
-        if av >= factor * 0.9999:
-            scaled = v / factor
-            fmt = '.3g' if abs(scaled) >= 10 else '.4g'
-            return f"{scaled:{fmt}}{suffix}"
-    return f"{v:.3e}"
+    # Walk from largest prefix downward; take the first where 0.1 ≤ |scaled| < 1000
+    best_factor, best_suffix = prefixes[-1]   # fallback: atto
+    for factor, suffix in prefixes:
+        if 0.1 <= av / factor < 1000.0:
+            best_factor = factor
+            best_suffix = suffix
+            break
+
+    scaled = v / best_factor
+
+    # 3 significant figures, strip trailing zeros
+    if abs(scaled) >= 100:
+        text = f"{scaled:.1f}"
+    elif abs(scaled) >= 10:
+        text = f"{scaled:.2f}"
+    else:
+        text = f"{scaled:.3f}"
+
+    if '.' in text:
+        text = text.rstrip('0').rstrip('.')
+
+    return f"{text}{best_suffix}"
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  XML DESIGN PARSER  (optional overlay)
