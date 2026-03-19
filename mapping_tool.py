@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QHeaderView, QToolBar, QSizePolicy, QDialog, QDialogButtonBox,
     QDoubleSpinBox, QCheckBox, QScrollArea, QSplitter, QProgressBar
 )
-from PySide6.QtCore import Qt, QRectF, QPointF, Signal, QSize, QTimer
+from PySide6.QtCore import Qt, QRectF, QPointF, Signal, QSize, QThread, QObject
 from PySide6.QtGui import (
     QPainter, QColor, QBrush, QPen, QFont, QLinearGradient,
     QRadialGradient, QPixmap, QIcon, QAction
@@ -347,7 +347,7 @@ def _init(rng):
               'g2':np.ones(D,'f'),'b2':np.zeros(D,'f')}
     return P
 
-def train_classifier(n_epochs=500, lr=4e-3, seed=42):
+def train_classifier(n_epochs=30, lr=0.02, seed=42):
     rng=np.random.default_rng(seed); P=_init(rng)
     data=_make_training_data()
     # Adam state mirrors param structure
@@ -385,20 +385,33 @@ def train_classifier(n_epochs=500, lr=4e-3, seed=42):
     return P
 
 class WaferClassifier:
-    _inst=None
-    def __init__(self): self.P=train_classifier()
-    @classmethod
-    def get(cls):
-        if cls._inst is None: cls._inst=cls()
-        return cls._inst
+    """Holds trained weights. Constructed in a background QThread."""
+    def __init__(self):
+        self.P = train_classifier()
+
     def _run(self, toks):
-        logits=_encode(toks,self.P); probs=_softmax(logits)
-        return sorted([{"class":CLASSES[i],"confidence":float(p),"class_id":i}
-                        for i,p in enumerate(probs)], key=lambda x:-x["confidence"])
+        logits = _encode(toks, self.P)
+        probs  = _softmax(logits)
+        return sorted(
+            [{"class": CLASSES[i], "confidence": float(p), "class_id": i}
+             for i, p in enumerate(probs)],
+            key=lambda x: -x["confidence"]
+        )
+
     def classify_kdf(self, header, sites, params, tests):
-        return self._run(extract_tokens_from_kdf(header,sites,params,tests))
+        return self._run(extract_tokens_from_kdf(header, sites, params, tests))
+
     def classify_xml(self, design):
         return self._run(extract_tokens_from_xml(design))
+
+
+class _TrainWorker(QObject):
+    """Runs train_classifier() on a background QThread, emits when done."""
+    finished = Signal(object)   # emits the WaferClassifier instance
+
+    def run(self):
+        clf = WaferClassifier()
+        self.finished.emit(clf)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  THEME
@@ -931,17 +944,40 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle('Wafer Map Viewer  \u00b7  AI Type Recognition')
-        self.resize(1480,880); self.setStyleSheet(SS); self.setWindowIcon(make_app_icon())
-        self._header={}; self._sites=[]; self._tests=[]; self._mkeys=[]
-        self._limits={}; self._current_mkey=None; self._design=None; self._clf=None
-        self._build_ui(); self._update_ui()
-        QTimer.singleShot(80, self._init_clf)
+        self.resize(1480, 880)
+        self.setStyleSheet(SS)
+        self.setWindowIcon(make_app_icon())
 
-    def _init_clf(self):
-        self.status.showMessage('  Training wafer-type transformer\u2026 (one-time startup)')
-        QApplication.processEvents()
-        self._clf=WaferClassifier.get()
-        self.status.showMessage('  Ready  \u00b7  transformer classifier active  \u00b7  open a KDF file to begin')
+        self._header = {}; self._sites = []; self._tests = []; self._mkeys = []
+        self._limits = {}; self._current_mkey = None; self._design = None
+        self._clf = None          # set when background training finishes
+        self._pending_kdf = None  # path queued while classifier trains
+        self._filepath = None
+
+        self._build_ui()
+        self._update_ui()
+
+        # Start classifier training on a background thread — UI stays responsive
+        self._train_thread = QThread()
+        self._train_worker = _TrainWorker()
+        self._train_worker.moveToThread(self._train_thread)
+        self._train_thread.started.connect(self._train_worker.run)
+        self._train_worker.finished.connect(self._on_clf_ready)
+        self._train_worker.finished.connect(self._train_thread.quit)
+        self.status.showMessage(
+            '  Training wafer-type classifier in background \u2014 '
+            'you can open files immediately, type ID will appear when ready')
+        self._train_thread.start()
+
+    def _on_clf_ready(self, clf):
+        """Called on the main thread when background training finishes."""
+        self._clf = clf
+        self.status.showMessage(
+            '  Ready  \u00b7  AI classifier active  \u00b7  open a KDF file to begin')
+        # If a file was loaded while training, classify it now
+        if self._pending_kdf:
+            self._run_classifier(*self._pending_kdf)
+            self._pending_kdf = None
 
     def _build_ui(self):
         tb=QToolBar('Main',self); tb.setIconSize(QSize(18,18)); tb.setMovable(False); self.addToolBar(tb)
@@ -999,6 +1035,17 @@ class MainWindow(QMainWindow):
 
         self.status=QStatusBar(); self.setStatusBar(self.status); self.status.showMessage('  Initialising\u2026')
 
+    def _run_classifier(self, hdr, sites, params, tests):
+        """Run classifier and update UI. Safe to call any time after _clf is set."""
+        res  = self._clf.classify_kdf(hdr, sites, params, tests)
+        toks = extract_tokens_from_kdf(hdr, sites, params, tests)
+        self.clf_panel.show_result(res, toks)
+        top  = res[0]
+        conf = f"{top['confidence']*100:.1f}%"
+        fname = os.path.basename(self._filepath) if self._filepath else ''
+        self.setWindowTitle(
+            f"Wafer Map Viewer  \u00b7  {fname}  \u00b7  {top['class']} ({conf})")
+
     def open_file(self):
         p,_=QFileDialog.getOpenFileName(self,'Open KDF File','','KDF Files (*.kdf);;All Files (*)')
         if p: self._load_kdf(p)
@@ -1006,6 +1053,7 @@ class MainWindow(QMainWindow):
     def _load_kdf(self,path):
         try: hdr,sites,params,tests=parse_kdf(path)
         except Exception as e: QMessageBox.critical(self,'Parse Error',str(e)); return
+        self._filepath=path
         self._header=hdr; self._sites=sites; self._tests=tests; self._mkeys=params; self._limits={}; self._current_mkey=None
         self.lbl_file.setText(f'  {os.path.basename(path)}  ')
         self.lbl_lot.setText(hdr.get('LOT','\u2014')); self.lbl_sys.setText(hdr.get('SYS','\u2014'))
@@ -1020,12 +1068,12 @@ class MainWindow(QMainWindow):
             par=QTreeWidgetItem(self.test_tree,[test]); par.setForeground(0,QColor(T["accent_dark"])); par.setFont(0,QFont('Segoe UI',12,QFont.Bold)); par.setExpanded(False)
             for prm in sorted(ttp[test]): ch=QTreeWidgetItem(par,[f'{prm}@{test}']); ch.setForeground(0,QColor(T["text_secondary"])); ch.setFont(0,QFont('Segoe UI',12))
         if params: self._current_mkey=params[0]; self.mkey_combo.setCurrentText(params[0]); self._refresh()
+        # Classifier: run now if ready, otherwise queue for when training finishes
         if self._clf:
-            res=self._clf.classify_kdf(hdr,sites,params,tests)
-            toks=extract_tokens_from_kdf(hdr,sites,params,tests)
-            self.clf_panel.show_result(res,toks)
-            top=res[0]; conf=f"{top['confidence']*100:.1f}%"
-            self.setWindowTitle(f"Wafer Map Viewer  \u00b7  {os.path.basename(path)}  \u00b7  {top['class']} ({conf})")
+            self._run_classifier(hdr, sites, params, tests)
+        else:
+            self._pending_kdf = (hdr, sites, params, tests)
+            self.clf_panel.banner.setText('\u23f3  Classifier training\u2026 type ID will appear shortly')
         self._update_ui()
         self.status.showMessage(f'  Loaded {len(sites)} sites, {len(params)} measurements \u2014 {os.path.basename(path)}')
 
