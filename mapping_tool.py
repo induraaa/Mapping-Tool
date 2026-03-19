@@ -201,6 +201,19 @@ def si_format(v: Optional[float]) -> str:
     return f"{v:.3e}"
 
 
+def is_cj_param(name: str) -> bool:
+    """Return True if the parameter name corresponds to a Cj-style capacitance."""
+    base = name.split("@", 1)[0]
+    return base.startswith("Cp") or base.startswith("Gp")
+
+
+def format_capacitance_pf(v: Optional[float]) -> str:
+    """Format a capacitance value given in farads as pF."""
+    if v is None:
+        return "N/A"
+    return f"{v * 1e12:.3g} pF"
+
+
 def parse_site_name(name: str) -> Tuple[int, int]:
     # Site_p3n12 -> x=+3, y=-12; Site_n1p0 -> x=-1, y=0
     # Expect "Site_[pn]\\d+[pn]\\d+"
@@ -830,6 +843,7 @@ class WaferCanvas(QWidget):
         self._low: Optional[float] = None
         self._high: Optional[float] = None
         self._mkey: Optional[str] = None
+        self._cj_mode: bool = False
         self._design: Optional[Design] = None
         self._ghost_sites: List[Tuple[int, int]] = []
         self._hover: Optional[Tuple[int, int]] = None
@@ -842,12 +856,14 @@ class WaferCanvas(QWidget):
              values: Dict[Tuple[int, int], Optional[float]],
              low: Optional[float],
              high: Optional[float],
-             mkey: Optional[str]):
+             mkey: Optional[str],
+             cj_mode: bool = False):
         self._sites = sites
         self._values = values
         self._low = low
         self._high = high
         self._mkey = mkey
+        self._cj_mode = cj_mode
         self._rebuild_ghosts()
         self.update()
 
@@ -1004,7 +1020,8 @@ class WaferCanvas(QWidget):
                 font.setPointSize(9)
                 font.setFamily("Consolas")
                 p.setFont(font)
-                p.drawText(r.adjusted(2, 0, -2, 0), Qt.AlignCenter, si_format(val))
+                text_val = format_capacitance_pf(val) if self._cj_mode else si_format(val)
+                p.drawText(r.adjusted(2, 0, -2, 0), Qt.AlignCenter, text_val)
             if cell > 58:
                 p.setPen(QColor(PALETTE["text_dim"]))
                 font = p.font()
@@ -1176,7 +1193,12 @@ class SiteDetailPanel(QWidget):
         for r, (m, sub, v) in enumerate(rows):
             self.table.setItem(r, 0, QTableWidgetItem(m))
             self.table.setItem(r, 1, QTableWidgetItem(sub))
-            it = QTableWidgetItem(si_format(v))
+            # Cp/Gp are capacitances in farads – show as pF
+            if is_cj_param(m):
+                txt = format_capacitance_pf(v)
+            else:
+                txt = si_format(v)
+            it = QTableWidgetItem(txt)
             it.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.table.setItem(r, 2, it)
 
@@ -1191,7 +1213,7 @@ class StatsPanel(QWidget):
         self.table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.table)
 
-    def update_stats(self, values: List[float], low: Optional[float], high: Optional[float]):
+    def update_stats(self, values: List[float], low: Optional[float], high: Optional[float], cj_mode: bool = False):
         vals = [v for v in values if v is not None and not math.isnan(v)]
         if not vals:
             self.table.setRowCount(0)
@@ -1221,14 +1243,17 @@ class StatsPanel(QWidget):
         total = max(1, count)
         yield_pct = 100.0 * passed / total if (low is not None or high is not None) else 0.0
 
+        def fmt(v: float) -> str:
+            return format_capacitance_pf(v) if cj_mode else si_format(v)
+
         rows = [
             ("Count", str(count)),
-            ("Mean", si_format(mean)),
-            ("Std Dev", si_format(std)),
-            ("Min", si_format(vmin)),
-            ("Max", si_format(vmax)),
-            ("Median", si_format(med)),
-            ("3σ Range", f"{si_format(lo_3s)} .. {si_format(hi_3s)}"),
+            ("Mean", fmt(mean)),
+            ("Std Dev", fmt(std)),
+            ("Min", fmt(vmin)),
+            ("Max", fmt(vmax)),
+            ("Median", fmt(med)),
+            ("3σ Range", f"{fmt(lo_3s)} .. {fmt(hi_3s)}"),
             ("Pass", str(passed)),
             ("Fail", str(failed)),
             ("Yield", f"{yield_pct:.1f}%"),
@@ -1725,6 +1750,7 @@ class MainWindow(QMainWindow):
         mkey = self.combo_meas.currentText()
         if not mkey:
             return
+        cj_mode = is_cj_param(mkey)
         low, high = self._limits.get(mkey, (None, None))
         values: Dict[Tuple[int, int], Optional[float]] = {}
         plain_vals: List[float] = []
@@ -1733,8 +1759,8 @@ class MainWindow(QMainWindow):
             values[coord] = v
             if v is not None and not math.isnan(v):
                 plain_vals.append(v)
-        self.canvas.load(self._kdf.sites, values, low, high, mkey)
-        self.tab_stats.update_stats(plain_vals, low, high)
+        self.canvas.load(self._kdf.sites, values, low, high, mkey, cj_mode=cj_mode)
+        self.tab_stats.update_stats(plain_vals, low, high, cj_mode=cj_mode)
         self.statusBar().showMessage(
             f"Showing: {mkey} · Low={low if low is not None else '—'} · "
             f"High={high if high is not None else '—'} · {len(self._kdf.sites)} sites"
