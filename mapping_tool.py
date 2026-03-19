@@ -353,13 +353,29 @@ class WaferCanvas(QWidget):
         return min(xs), max(xs), min(ys), max(ys)
 
     def _layout(self, x0, x1, y0, y1, w, h):
-        # Leave a margin that is exactly one half-cell on every side so
-        # the outermost dies sit fully inside the wafer circle.
         n_cols = x1 - x0 + 1
         n_rows = y1 - y0 + 1
         pad    = 48
-        cell   = min((w - 2*pad) / max(n_cols, 1),
-                     (h - 2*pad) / max(n_rows, 1))
+
+        # Base cell size from rectangle fit (die grid fits inside widget).
+        cell_rect = min((w - 2*pad) / max(n_cols, 1),
+                         (h - 2*pad) / max(n_rows, 1))
+
+        # Additional cap so the wafer DISC (which wraps the grid corners)
+        # doesn't get clipped on smaller screens.
+        #
+        # In paintEvent():
+        #   grid_corner_dist = cell * hypot(n_cols/2, n_rows/2)
+        #   radius           = grid_corner_dist + cell * 0.3
+        #                 => radius = cell * (hypot(n_cols/2, n_rows/2) + 0.3)
+        # We cap 'cell' so radius fits within the widget.
+        k = math.hypot(n_cols / 2.0, n_rows / 2.0)
+        r_lim = min(w, h) / 2.0 - 6.0  # room for pen thickness + notch
+        cell = cell_rect
+        if r_lim > 0 and (k + 0.3) > 0:
+            cell_circle = r_lim / (k + 0.3)
+            cell = min(cell_rect, cell_circle)
+
         ox = (w - cell * n_cols) / 2
         oy = (h - cell * n_rows) / 2
         return ox, oy, cell
@@ -412,6 +428,13 @@ class WaferCanvas(QWidget):
         half_grid_h = cell * n_rows / 2
         grid_corner_dist = math.hypot(half_grid_w, half_grid_h)
         radius = grid_corner_dist + cell * 0.3   # small clearance only
+
+        # Safety clamp: ensure the disc itself stays within widget bounds.
+        # (The layout math should usually keep this unnecessary, but avoids
+        # edge cases due to rounding or small widget sizes.)
+        radius_max = min(cx, w - cx, cy, h - cy) - 2.0
+        if radius > radius_max:
+            radius = max(grid_corner_dist, radius_max)
 
         # ── disc shadow ───────────────────────────────────────────────────────
         shad = QRadialGradient(cx+4, cy+4, radius+6)
