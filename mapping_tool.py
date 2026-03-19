@@ -1420,17 +1420,13 @@ class MainWindow(QMainWindow):
 
         central = QWidget()
         self.setCentralWidget(central)
-        root = QHBoxLayout(central)
-        root.setContentsMargins(8, 8, 8, 8)
-        root.setSpacing(8)
+        root = QVBoxLayout(central)
+        root.setContentsMargins(10, 10, 10, 10)
+        root.setSpacing(10)
 
-        # left panel
-        left = QVBoxLayout()
-        left.setSpacing(8)
-        root.addLayout(left, 0)
-
-        self.info_group = QGroupBox("File Information")
-        fl = QFormLayout(self.info_group)
+        # top info strip inspired by dashboards
+        info_bar = QGroupBox("Current Wafer")
+        fl = QFormLayout(info_bar)
         self.lbl_lot = QLabel("–")
         self.lbl_sys = QLabel("–")
         self.lbl_start = QLabel("–")
@@ -1439,14 +1435,49 @@ class MainWindow(QMainWindow):
         fl.addRow("System:", self.lbl_sys)
         fl.addRow("Start:", self.lbl_start)
         fl.addRow("Sites:", self.lbl_sites)
-        left.addWidget(self.info_group)
+        root.addWidget(info_bar, 0)
 
-        self.measure_group = QGroupBox("Measurement")
+        # middle zone: wafer on the left, analysis tabs on the right
+        middle = QHBoxLayout()
+        middle.setSpacing(10)
+        root.addLayout(middle, 1)
+
+        self.canvas = WaferCanvas()
+        middle.addWidget(self.canvas, 2)
+        self.canvas.siteClicked.connect(self._on_site_clicked)
+
+        right_panel = QVBoxLayout()
+        middle.addLayout(right_panel, 1)
+        self.tabs = QTabWidget()
+        self.tab_clf = ClassifierPanel()
+        self.tab_site = SiteDetailPanel()
+        self.tab_stats = StatsPanel()
+        self.tab_design = DesignInfoPanel()
+        self.tabs.addTab(self.tab_clf, "⚡ Type ID")
+        self.tabs.addTab(self.tab_site, "Die Detail")
+        self.tabs.addTab(self.tab_stats, "Statistics")
+        self.tabs.addTab(self.tab_design, "Design")
+        right_panel.addWidget(self.tabs)
+
+        # bottom controls ribbon: measurement, limits, design & test tree
+        controls = QHBoxLayout()
+        controls.setSpacing(10)
+        root.addLayout(controls, 0)
+
+        self.measure_group = QGroupBox("Measurement & Filter")
         ml = QVBoxLayout(self.measure_group)
         self.combo_meas = QComboBox()
         ml.addWidget(self.combo_meas)
         self.combo_meas.currentTextChanged.connect(self._on_measure_changed)
-        left.addWidget(self.measure_group)
+
+        self.filter_group = QGroupBox()
+        flt = QVBoxLayout(self.filter_group)
+        self.tree_tests = QTreeWidget()
+        self.tree_tests.setHeaderHidden(True)
+        self.tree_tests.itemDoubleClicked.connect(self._on_test_double_clicked)
+        flt.addWidget(self.tree_tests)
+        ml.addWidget(self.filter_group, 1)
+        controls.addWidget(self.measure_group, 2)
 
         self.limits_group = QGroupBox("Pass/Fail Limits")
         ll = QGridLayout(self.limits_group)
@@ -1466,7 +1497,7 @@ class MainWindow(QMainWindow):
         ll.addWidget(self.btn_clear_limits, 2, 1)
         self.btn_apply_limits.clicked.connect(self._apply_limits)
         self.btn_clear_limits.clicked.connect(self._clear_limits)
-        left.addWidget(self.limits_group)
+        controls.addWidget(self.limits_group, 1)
 
         self.design_group = QGroupBox("Design Selector")
         dl = QVBoxLayout(self.design_group)
@@ -1474,34 +1505,7 @@ class MainWindow(QMainWindow):
         dl.addWidget(self.combo_design)
         self.design_group.setVisible(False)
         self.combo_design.currentTextChanged.connect(self._on_design_changed)
-        left.addWidget(self.design_group)
-
-        self.filter_group = QGroupBox("Filter by Test")
-        flt = QVBoxLayout(self.filter_group)
-        self.tree_tests = QTreeWidget()
-        self.tree_tests.setHeaderHidden(True)
-        self.tree_tests.itemDoubleClicked.connect(self._on_test_double_clicked)
-        flt.addWidget(self.tree_tests)
-        left.addWidget(self.filter_group, 1)
-
-        # centre canvas
-        self.canvas = WaferCanvas()
-        root.addWidget(self.canvas, 1)
-        self.canvas.siteClicked.connect(self._on_site_clicked)
-
-        # right panel tabs
-        right = QVBoxLayout()
-        root.addLayout(right, 0)
-        self.tabs = QTabWidget()
-        self.tab_clf = ClassifierPanel()
-        self.tab_site = SiteDetailPanel()
-        self.tab_stats = StatsPanel()
-        self.tab_design = DesignInfoPanel()
-        self.tabs.addTab(self.tab_clf, "⚡ Type ID")
-        self.tabs.addTab(self.tab_site, "Die Detail")
-        self.tabs.addTab(self.tab_stats, "Statistics")
-        self.tabs.addTab(self.tab_design, "Design")
-        right.addWidget(self.tabs)
+        controls.addWidget(self.design_group, 1)
 
     def _build_toolbar(self):
         tb = QToolBar()
