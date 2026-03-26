@@ -15,12 +15,14 @@ from PySide6.QtWidgets import (
     QLabel, QFileDialog, QTreeWidget, QTreeWidgetItem, QGroupBox,
     QLineEdit, QFormLayout, QStatusBar, QComboBox,
     QMessageBox, QTabWidget, QTableWidget, QTableWidgetItem,
-    QHeaderView, QToolBar, QSizePolicy, QPushButton, QSpinBox
+    QHeaderView, QToolBar, QSizePolicy, QPushButton, QSpinBox,
+    QStyle, QStyleOptionComboBox
 )
-from PySide6.QtCore import Qt, QRectF, QPointF, Signal, QSize
+from PySide6.QtCore import Qt, QRectF, QPointF, Signal, QSize, QRect
 from PySide6.QtGui import (
     QPainter, QColor, QBrush, QPen, QFont,
-    QLinearGradient, QRadialGradient, QPixmap, QIcon, QAction
+    QLinearGradient, QRadialGradient, QPixmap, QIcon, QAction,
+    QPolygonF
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -60,62 +62,220 @@ T = {
 }
 
 SS = """
-QMainWindow,QWidget{background-color:""" + T['bg_app'] + """;color:""" + T['text_primary'] + """;
-    font-family:'Segoe UI','Calibri',sans-serif;font-size:13px;}
-QGroupBox{background-color:""" + T['bg_panel'] + """;border:1px solid """ + T['border'] + """;
-    border-radius:6px;margin-top:22px;padding:8px 6px 6px 6px;font-weight:bold;font-size:11px;}
-QGroupBox::title{subcontrol-origin:margin;left:10px;padding:2px 6px;
-    background:""" + T['bg_panel'] + """;color:""" + T['accent'] + """;font-size:11px;font-weight:bold;}
+QMainWindow,QWidget{
+    background-color:""" + T['bg_app'] + """;
+    color:""" + T['text_primary'] + """;
+    font-family:'Segoe UI','Calibri',sans-serif;
+    font-size:13px;
+}
+QGroupBox{
+    background-color:""" + T['bg_panel'] + """;
+    border:1px solid """ + T['border'] + """;
+    border-radius:10px;
+    margin-top:22px;
+    padding:10px 8px 8px 8px;
+    font-weight:bold;
+    font-size:11px;
+}
+QGroupBox::title{
+    subcontrol-origin:margin;
+    left:12px;
+    padding:2px 8px;
+    background:""" + T['bg_panel'] + """;
+    color:""" + T['accent'] + """;
+    font-size:11px;
+    font-weight:bold;
+    border-radius:4px;
+}
 QLabel{background:transparent;color:""" + T['text_primary'] + """;font-size:13px;}
-QPushButton{background-color:""" + T['bg_panel'] + """;border:1px solid """ + T['border_hi'] + """;
-    border-radius:5px;padding:6px 16px;color:""" + T['text_primary'] + """;font-weight:600;
-    font-size:13px;min-height:28px;}
-QPushButton:hover{background-color:""" + T['accent_dim'] + """;border:1px solid """ + T['accent'] + """;
-    color:""" + T['accent_dark'] + """;}
+QPushButton{
+    background-color:""" + T['bg_panel'] + """;
+    border:1px solid """ + T['border_hi'] + """;
+    border-radius:8px;
+    padding:6px 16px;
+    color:""" + T['text_primary'] + """;
+    font-weight:600;
+    font-size:13px;
+    min-height:28px;
+}
+QPushButton:hover{
+    background-color:""" + T['accent_dim'] + """;
+    border:1px solid """ + T['accent'] + """;
+    color:""" + T['accent_dark'] + """;
+}
 QPushButton:pressed{background-color:""" + T['accent'] + """;color:white;}
-QPushButton#primary{background-color:""" + T['accent'] + """;border:1px solid """ + T['accent_dark'] + """;
-    color:white;font-weight:bold;}
+QPushButton#primary{
+    background-color:""" + T['accent'] + """;
+    border:1px solid """ + T['accent_dark'] + """;
+    color:white;
+    font-weight:bold;
+    border-radius:8px;
+}
 QPushButton#primary:hover{background-color:""" + T['accent_dark'] + """;}
-QComboBox{background-color:""" + T['bg_panel'] + """;border:1px solid """ + T['border'] + """;
-    border-radius:5px;padding:5px 10px;color:""" + T['text_primary'] + """;font-size:13px;min-height:28px;}
-QComboBox::drop-down{border:none;width:24px;}
-QComboBox::down-arrow{width:9px;height:7px;border-left:5px solid transparent;
-    border-right:5px solid transparent;border-top:7px solid """ + T['accent'] + """;}
-QComboBox QAbstractItemView{background:""" + T['bg_panel'] + """;border:1px solid """ + T['border_hi'] + """;
-    selection-background-color:""" + T['accent_dim'] + """;color:""" + T['text_primary'] + """;font-size:13px;}
-QLineEdit,QSpinBox{background-color:""" + T['bg_panel'] + """;border:1px solid """ + T['border'] + """;
-    border-radius:5px;padding:5px 10px;color:""" + T['text_primary'] + """;font-size:13px;min-height:28px;}
+QComboBox{
+    background-color:""" + T['bg_panel'] + """;
+    border:1px solid """ + T['border'] + """;
+    border-radius:8px;
+    padding:5px 36px 5px 12px;
+    color:""" + T['text_primary'] + """;
+    font-size:13px;
+    min-height:32px;
+}
+QComboBox:hover{border:1px solid """ + T['accent'] + """;}
+QComboBox:focus{border:1px solid """ + T['accent'] + """;}
+QComboBox::drop-down{
+    subcontrol-origin:padding;
+    subcontrol-position:right center;
+    width:32px;
+    border:none;
+    border-left:1px solid """ + T['border'] + """;
+    border-top-right-radius:8px;
+    border-bottom-right-radius:8px;
+    background:""" + T['bg_header'] + """;
+}
+QComboBox::down-arrow{
+    image:none;
+    width:0px;
+    height:0px;
+}
+QComboBox QAbstractItemView{
+    background:""" + T['bg_panel'] + """;
+    border:1px solid """ + T['border_hi'] + """;
+    border-radius:8px;
+    selection-background-color:""" + T['accent_dim'] + """;
+    color:""" + T['text_primary'] + """;
+    font-size:13px;
+    padding:4px;
+}
+QLineEdit,QSpinBox{
+    background-color:""" + T['bg_panel'] + """;
+    border:1px solid """ + T['border'] + """;
+    border-radius:8px;
+    padding:5px 10px;
+    color:""" + T['text_primary'] + """;
+    font-size:13px;
+    min-height:28px;
+}
 QLineEdit:focus,QSpinBox:focus{border:1px solid """ + T['accent'] + """;}
-QSpinBox::up-button,QSpinBox::down-button{width:20px;background:""" + T['bg_header'] + """;
-    border:none;}
-QTreeWidget,QTableWidget{background-color:""" + T['bg_panel'] + """;border:1px solid """ + T['border'] + """;
-    border-radius:4px;alternate-background-color:""" + T['bg_row_alt'] + """;outline:none;font-size:13px;}
+QSpinBox::up-button,QSpinBox::down-button{
+    width:20px;
+    background:""" + T['bg_header'] + """;
+    border:none;
+    border-radius:4px;
+}
+QTreeWidget,QTableWidget{
+    background-color:""" + T['bg_panel'] + """;
+    border:1px solid """ + T['border'] + """;
+    border-radius:8px;
+    alternate-background-color:""" + T['bg_row_alt'] + """;
+    outline:none;
+    font-size:13px;
+}
 QTreeWidget::item,QTableWidget::item{padding:4px 5px;border:none;}
-QTreeWidget::item:hover,QTableWidget::item:hover{background-color:""" + T['accent_dim'] + """;}
-QTreeWidget::item:selected,QTableWidget::item:selected{background-color:""" + T['accent_dim'] + """;
-    color:""" + T['accent_dark'] + """;}
-QHeaderView::section{background-color:""" + T['bg_header'] + """;color:""" + T['accent_dark'] + """;
-    border:none;border-right:1px solid """ + T['border'] + """;border-bottom:1px solid """ + T['border'] + """;
-    padding:6px 10px;font-size:12px;font-weight:bold;}
-QScrollBar:vertical{background:""" + T['bg_app'] + """;width:9px;border:none;border-radius:4px;}
-QScrollBar::handle:vertical{background:""" + T['border_hi'] + """;border-radius:4px;min-height:24px;}
+QTreeWidget::item:hover,QTableWidget::item:hover{
+    background-color:""" + T['accent_dim'] + """;
+    border-radius:4px;
+}
+QTreeWidget::item:selected,QTableWidget::item:selected{
+    background-color:""" + T['accent_dim'] + """;
+    color:""" + T['accent_dark'] + """;
+    border-radius:4px;
+}
+QHeaderView::section{
+    background-color:""" + T['bg_header'] + """;
+    color:""" + T['accent_dark'] + """;
+    border:none;
+    border-right:1px solid """ + T['border'] + """;
+    border-bottom:1px solid """ + T['border'] + """;
+    padding:6px 10px;
+    font-size:12px;
+    font-weight:bold;
+}
+QHeaderView::section:first{border-top-left-radius:8px;}
+QHeaderView::section:last{border-top-right-radius:8px;border-right:none;}
+QScrollBar:vertical{
+    background:""" + T['bg_app'] + """;
+    width:9px;border:none;border-radius:4px;
+}
+QScrollBar::handle:vertical{
+    background:""" + T['border_hi'] + """;
+    border-radius:4px;min-height:24px;
+}
 QScrollBar::handle:vertical:hover{background:""" + T['accent'] + """;}
 QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{height:0;}
-QScrollBar:horizontal{background:""" + T['bg_app'] + """;height:9px;border-radius:4px;}
-QScrollBar::handle:horizontal{background:""" + T['border_hi'] + """;border-radius:4px;}
-QTabWidget::pane{border:1px solid """ + T['border'] + """;background:""" + T['bg_panel'] + """;
-    border-radius:0 5px 5px 5px;}
-QTabBar::tab{background:""" + T['bg_header'] + """;color:""" + T['text_secondary'] + """;
-    padding:7px 18px;border:1px solid """ + T['border'] + """;border-bottom:none;
-    border-radius:5px 5px 0 0;margin-right:2px;font-size:12px;}
-QTabBar::tab:selected{background:""" + T['bg_panel'] + """;color:""" + T['accent'] + """;
-    border-top:2px solid """ + T['accent'] + """;font-weight:bold;font-size:13px;}
-QStatusBar{background:""" + T['bg_header'] + """;color:""" + T['text_secondary'] + """;
-    border-top:1px solid """ + T['border'] + """;font-size:12px;padding:3px 6px;}
-QToolBar{background:""" + T['bg_panel'] + """;border-bottom:1px solid """ + T['border'] + """;
-    spacing:4px;padding:5px 10px;}
+QScrollBar:horizontal{
+    background:""" + T['bg_app'] + """;
+    height:9px;border-radius:4px;
+}
+QScrollBar::handle:horizontal{
+    background:""" + T['border_hi'] + """;border-radius:4px;
+}
+QTabWidget::pane{
+    border:1px solid """ + T['border'] + """;
+    background:""" + T['bg_panel'] + """;
+    border-radius:0 8px 8px 8px;
+}
+QTabBar::tab{
+    background:""" + T['bg_header'] + """;
+    color:""" + T['text_secondary'] + """;
+    padding:7px 18px;
+    border:1px solid """ + T['border'] + """;
+    border-bottom:none;
+    border-radius:8px 8px 0 0;
+    margin-right:2px;
+    font-size:12px;
+}
+QTabBar::tab:selected{
+    background:""" + T['bg_panel'] + """;
+    color:""" + T['accent'] + """;
+    border-top:2px solid """ + T['accent'] + """;
+    font-weight:bold;font-size:13px;
+}
+QStatusBar{
+    background:""" + T['bg_header'] + """;
+    color:""" + T['text_secondary'] + """;
+    border-top:1px solid """ + T['border'] + """;
+    font-size:12px;padding:3px 6px;
+}
+QToolBar{
+    background:""" + T['bg_panel'] + """;
+    border-bottom:1px solid """ + T['border'] + """;
+    spacing:4px;padding:5px 10px;
+}
 QToolBar::separator{background:""" + T['border'] + """;width:1px;margin:4px 8px;}
 """
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  CUSTOM COMBOBOX  — draws its own crisp chevron arrow
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ArrowComboBox(QComboBox):
+    """QComboBox that paints a clean chevron arrow in the drop-down button."""
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+
+        # drop-down button area (right 32 px)
+        btn_x = self.width() - 32
+        btn_w = 32
+        cx = btn_x + btn_w / 2.0
+        cy = self.height() / 2.0
+
+        # chevron  ▾  — three points
+        aw = 8.0   # half-width of chevron
+        ah = 5.0   # height of chevron
+        pts = QPolygonF([
+            QPointF(cx - aw, cy - ah / 2),
+            QPointF(cx,      cy + ah / 2),
+            QPointF(cx + aw, cy - ah / 2),
+        ])
+        pen = QPen(QColor(T['accent']), 2.0, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+        p.setPen(pen)
+        p.setBrush(Qt.NoBrush)
+        p.drawPolyline(pts)
+        p.end()
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  APP ICON
@@ -167,17 +327,6 @@ def make_app_icon() -> QIcon:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def parse_kdf(filepath: str):
-    """
-    Parse a Keithley ACS KDF V1.2 file.
-
-    Returns
-    -------
-    header  : dict
-    sites   : list of { 'name', 'x', 'y',
-                        'subsites': { sub_num: { 'param@test': float } } }
-    params  : sorted list of unique 'param@test' keys
-    tests   : sorted list of unique test names
-    """
     header: dict = {}
     sites:  list = []
     mkeys:  set  = set()
@@ -197,7 +346,6 @@ def parse_kdf(filepath: str):
             header[k.strip()] = v.strip()
         i += 1
 
-    # skip optional wafer-identification line
     if i < len(lines) and lines[i].strip() and not lines[i].strip().startswith('Site_'):
         i += 1
 
@@ -257,12 +405,6 @@ def parse_kdf(filepath: str):
 
 
 def get_site_value(site: dict, mkey: str, subsite: int | None = None) -> float | None:
-    """
-    Return the value for a measurement key on a site.
-    If subsite is None  → average across all subsites (designs).
-    If subsite is given → return that specific design's value only.
-    Ignores non-finite values (e.g. 7e+22 instrument error codes).
-    """
     if subsite is not None:
         v = site['subsites'].get(subsite, {}).get(mkey)
         return v if (v is not None and math.isfinite(v)) else None
@@ -276,7 +418,6 @@ def get_site_value(site: dict, mkey: str, subsite: int | None = None) -> float |
 
 
 def all_subsites(sites: list) -> list[int]:
-    """Return sorted list of all unique subsite numbers across all sites."""
     s = set()
     for site in sites:
         s.update(site['subsites'].keys())
@@ -284,11 +425,6 @@ def all_subsites(sites: list) -> list[int]:
 
 
 def si_fmt(v: float | None) -> str:
-    """
-    Format a float using the largest SI prefix where |scaled| is in [0.1, 1000).
-    Never uses scientific notation.
-    Examples: 3e-13 → '0.3p',  14.3e-12 → '14.3p',  25e-15 → '25f'
-    """
     if v is None or not math.isfinite(v):
         return 'N/A'
     if v == 0:
@@ -323,13 +459,13 @@ class WaferCanvas(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.sites         = []
-        self.values        = {}    # site_name → float | None
+        self.values        = {}
         self.low_limit     = None
         self.high_limit    = None
         self.mkey          = ''
         self.selected_site = None
         self._hover        = None
-        self._rects        = {}    # site_name → QRectF
+        self._rects        = {}
 
         self.setMinimumSize(400, 400)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -356,34 +492,24 @@ class WaferCanvas(QWidget):
         n_cols = x1 - x0 + 1
         n_rows = y1 - y0 + 1
 
-        # Wafer circle is treated as fixed (fits the screen). We size the
-        # tiles to fit *inside* the fixed circle based on the number of
-        # columns/rows.
         cx = w / 2.0
         cy = h / 2.0
         radius_max = min(cx, w - cx, cy, h - cy) - 0.5
-        disc_margin = 2.0  # breathing room for pen + notch
+        disc_margin = 2.0
         radius = max(1.0, radius_max - disc_margin)
 
-        # Upper bound so the die grid never exceeds widget bounds.
         cell_hi = min(w / max(n_cols, 1), h / max(n_rows, 1))
         cell_lo = 1.0
 
         def fits(cell: float) -> bool:
-            # This must match how die rectangles are inset in paintEvent().
             mg = max(1.0, cell * 0.03)
             half_grid_w = cell * n_cols / 2.0 - mg
             half_grid_h = cell * n_rows / 2.0 - mg
             half_grid_w = max(0.0, half_grid_w)
             half_grid_h = max(0.0, half_grid_h)
-
-            # distance from circle center to the farthest die corner
             dist = math.hypot(half_grid_w, half_grid_h)
-
-            # keep a tiny clearance so rounded corners + stroke don't clip
             return dist <= (radius - 0.3)
 
-        # Binary search for largest `cell` that fits in the fixed disc.
         for _ in range(24):
             cell_mid = (cell_lo + cell_hi) / 2.0
             if fits(cell_mid):
@@ -392,7 +518,6 @@ class WaferCanvas(QWidget):
                 cell_hi = cell_mid
 
         cell = cell_lo
-
         ox = (w - cell * n_cols) / 2.0
         oy = (h - cell * n_rows) / 2.0
         return ox, oy, cell
@@ -415,7 +540,6 @@ class WaferCanvas(QWidget):
         p.setRenderHint(QPainter.TextAntialiasing)
         w, h = self.width(), self.height()
 
-        # ── background ────────────────────────────────────────────────────────
         p.fillRect(0, 0, w, h, QColor(T['bg_app']))
         p.setPen(QPen(QColor(T['border']), 1.0))
         for gx in range(0, w + 28, 28):
@@ -430,17 +554,13 @@ class WaferCanvas(QWidget):
 
         x0, x1, y0, y1 = self._bounds()
         ox, oy, cell    = self._layout(x0, x1, y0, y1, w, h)
-        n_cols = x1 - x0 + 1
-        n_rows = y1 - y0 + 1
 
-        # Fixed wafer circle (does not depend on how many tiles there are).
         cx = w / 2.0
         cy = h / 2.0
         radius_max = min(cx, w - cx, cy, h - cy) - 0.5
         disc_margin = 2.0
         radius = max(1.0, radius_max - disc_margin)
 
-        # ── disc shadow ───────────────────────────────────────────────────────
         shad = QRadialGradient(cx+4, cy+4, radius+4)
         shad.setColorAt(0,   QColor(0, 0, 0, 24))
         shad.setColorAt(0.8, QColor(0, 0, 0,  8))
@@ -448,7 +568,6 @@ class WaferCanvas(QWidget):
         p.setBrush(QBrush(shad)); p.setPen(Qt.NoPen)
         p.drawEllipse(QPointF(cx+4, cy+4), radius+4, radius+4)
 
-        # ── wafer disc ────────────────────────────────────────────────────────
         wg = QRadialGradient(cx - radius*0.15, cy - radius*0.2, radius*1.3)
         wg.setColorAt(0,    QColor('#ffffff'))
         wg.setColorAt(0.5,  QColor(T['wafer_bg']))
@@ -457,17 +576,16 @@ class WaferCanvas(QWidget):
         p.setPen(QPen(QColor(T['wafer_edge']), 1.5))
         p.drawEllipse(QPointF(cx, cy), radius, radius)
 
-        # ── flat notch at bottom ──────────────────────────────────────────────
         nw = radius * 0.22
         p.setPen(Qt.NoPen); p.setBrush(QColor(T['bg_app']))
-        # Keep the notch inside the disc edge so the disc won't need
-        # extra "padding" to avoid clipping.
         p.drawRect(QRectF(cx - nw/2, cy + radius - 6, nw, 6))
         p.setPen(QPen(QColor(T['wafer_edge']), 2))
         p.drawLine(QPointF(cx - nw/2, cy + radius - 4),
                    QPointF(cx + nw/2, cy + radius - 4))
 
-        # ── die cells ─────────────────────────────────────────────────────────
+        # die corner radius — scales with cell size, minimum 3 px
+        die_radius = max(3.0, cell * 0.10)
+
         fs   = max(7, int(cell * 0.15))
         vfnt = QFont('Consolas', fs, QFont.Bold)
         cfnt = QFont('Consolas', max(6, fs - 2))
@@ -484,28 +602,25 @@ class WaferCanvas(QWidget):
             is_sel = self.selected_site and site['name'] == self.selected_site['name']
             is_hov = self._hover         and site['name'] == self._hover['name']
 
-            # soft drop shadow on larger cells
             if cell > 30:
                 p.setBrush(QColor(0,0,0,12)); p.setPen(Qt.NoPen)
                 p.drawRoundedRect(
-                    QRectF(rect.x()+2, rect.y()+2, rect.width(), rect.height()), 3, 3)
+                    QRectF(rect.x()+2, rect.y()+2, rect.width(), rect.height()),
+                    die_radius, die_radius)
 
-            # gradient fill
             cg = QLinearGradient(rect.topLeft(), rect.bottomRight())
             cg.setColorAt(0, bg.lighter(108)); cg.setColorAt(1, bg)
             p.setBrush(QBrush(cg))
             p.setPen(QPen(QColor(T['selected']), 2.5) if is_sel
                      else QPen(QColor(T['hover_border']), 2) if is_hov
                      else QPen(bc, 1))
-            p.drawRoundedRect(rect, 3, 3)
+            p.drawRoundedRect(rect, die_radius, die_radius)
 
-            # value label
             v = self.values.get(site['name'])
             if v is not None and cell > 28:
                 p.setFont(vfnt); p.setPen(fg)
                 p.drawText(rect, Qt.AlignCenter, si_fmt(v))
 
-            # coordinate overlay at high zoom
             if cell > 58:
                 p.setFont(cfnt); p.setPen(QColor(T['text_dim']))
                 cr = QRectF(px_+mg+2, py_+mg+1, cell-2*mg-2, cell*0.28)
@@ -526,12 +641,12 @@ class WaferCanvas(QWidget):
         lx = 14; ly = h - bh - 10
         p.setBrush(QColor(255, 255, 255, 215))
         p.setPen(QPen(QColor(T['border']), 1))
-        p.drawRoundedRect(QRectF(lx-6, ly-8, 178, bh), 5, 5)
+        p.drawRoundedRect(QRectF(lx-6, ly-8, 178, bh), 8, 8)
         p.setFont(QFont('Segoe UI', 11))
         for bg_hex, fg_hex, label in items:
             p.setBrush(QBrush(QColor(bg_hex)))
             p.setPen(QPen(QColor(fg_hex), 1))
-            p.drawRoundedRect(QRectF(lx, ly, 14, 14), 2, 2)
+            p.drawRoundedRect(QRectF(lx, ly, 14, 14), 4, 4)
             p.setPen(QColor(T['text_primary']))
             p.drawText(int(lx+20), int(ly+11), label)
             ly += 22
@@ -576,7 +691,7 @@ class SiteDetailPanel(QWidget):
         self.title.setStyleSheet(
             f'font-weight:bold;font-size:13px;color:{T["accent_dark"]};'
             f'padding:5px 8px;background:{T["accent_dim"]};'
-            f'border-radius:5px;border-left:3px solid {T["accent"]};')
+            f'border-radius:8px;border-left:3px solid {T["accent"]};')
         lo.addWidget(self.title)
 
         self.table = QTableWidget(0, 3)
@@ -612,7 +727,6 @@ class SiteDetailPanel(QWidget):
             si.setFont(QFont('Segoe UI', 12))
             self.table.setItem(i, 1, si)
 
-            # show N/A for non-finite values (instrument error codes)
             display = si_fmt(val) if (val is not None and math.isfinite(val)) else 'N/A'
             vi = QTableWidgetItem(display)
             vi.setForeground(QColor(T['accent_dark']))
@@ -700,16 +814,14 @@ class MainWindow(QMainWindow):
         self._header:       dict      = {}
         self._sites:        list      = []
         self._mkeys:        list[str] = []
-        self._limits:       dict      = {}   # mkey → (lo, hi)
+        self._limits:       dict      = {}
         self._current_mkey: str | None = None
         self._filepath:     str | None = None
-        self._all_subsites: list[int]  = []  # sorted subsite numbers found
-        self._current_sub:  int | None = None  # None = average all
+        self._all_subsites: list[int]  = []
+        self._current_sub:  int | None = None
 
         self._build_ui()
         self._update_ui_state()
-
-    # ── UI construction ───────────────────────────────────────────────────────
 
     def _build_ui(self):
         tb = QToolBar('Main', self)
@@ -733,7 +845,6 @@ class MainWindow(QMainWindow):
             f'color:{T["text_secondary"]};font-size:12px;padding-right:10px;')
         tb.addWidget(self.lbl_file)
 
-        # ── central ───────────────────────────────────────────────────────────
         cw = QWidget(); self.setCentralWidget(cw)
         mh = QHBoxLayout(cw); mh.setSpacing(10); mh.setContentsMargins(10, 10, 10, 10)
 
@@ -741,7 +852,6 @@ class MainWindow(QMainWindow):
         left = QWidget(); left.setFixedWidth(282)
         lv = QVBoxLayout(left); lv.setSpacing(10); lv.setContentsMargins(0, 0, 0, 0)
 
-        # file info
         ib = QGroupBox('File Information')
         iform = QFormLayout(ib); iform.setSpacing(6)
         iform.setLabelAlignment(Qt.AlignRight)
@@ -769,27 +879,24 @@ class MainWindow(QMainWindow):
             iform.addRow(kl, wid)
         lv.addWidget(ib)
 
-        # design (subsite) selector
+        # design selector — uses ArrowComboBox
         db = QGroupBox('Design')
         dv = QVBoxLayout(db); dv.setSpacing(6)
-
         desc = QLabel(
             'Each die may contain multiple designs.\n'
             'Select which design to display.')
         desc.setWordWrap(True)
-        desc.setStyleSheet(
-            f'color:{T["text_secondary"]};font-size:11px;')
+        desc.setStyleSheet(f'color:{T["text_secondary"]};font-size:11px;')
         dv.addWidget(desc)
-
-        self.design_combo = QComboBox()
+        self.design_combo = ArrowComboBox()
         self.design_combo.currentIndexChanged.connect(self._on_design_changed)
         dv.addWidget(self.design_combo)
         lv.addWidget(db)
 
-        # measurement selector
+        # measurement selector — uses ArrowComboBox
         mb = QGroupBox('Measurement')
         mv = QVBoxLayout(mb); mv.setSpacing(6)
-        self.mkey_combo = QComboBox()
+        self.mkey_combo = ArrowComboBox()
         self.mkey_combo.currentTextChanged.connect(self._on_mkey_changed)
         mv.addWidget(self.mkey_combo)
         lv.addWidget(mb)
@@ -829,7 +936,7 @@ class MainWindow(QMainWindow):
         canvas_wrap = QWidget()
         canvas_wrap.setStyleSheet(
             f'background:{T["bg_panel"]};border:1px solid {T["border"]};'
-            f'border-radius:7px;')
+            f'border-radius:12px;')
         cl = QVBoxLayout(canvas_wrap); cl.setContentsMargins(4, 4, 4, 4)
         self.canvas = WaferCanvas()
         self.canvas.siteClicked.connect(self._on_die_clicked)
@@ -876,12 +983,10 @@ class MainWindow(QMainWindow):
         self._limits       = {}
         self._current_mkey = None
 
-        # Discover all subsite (design) numbers
         subs = all_subsites(sites)
         self._all_subsites = subs
-        self._current_sub  = subs[0] if len(subs) == 1 else None  # None = average
+        self._current_sub  = subs[0] if len(subs) == 1 else None
 
-        # header labels
         self.lbl_file.setText(f'  {os.path.basename(path)}  ')
         self.lbl_lot.setText(header.get('LOT', '—'))
         self.lbl_sys.setText(header.get('SYS', '—') or header.get('TST', '—'))
@@ -890,28 +995,25 @@ class MainWindow(QMainWindow):
         self.lbl_tests.setText(str(len(tests)))
         self.lbl_dsn.setText(str(len(subs)))
 
-        self.setWindowTitle(f'Wafer Map Viewer  ·  {header.get("LOT", os.path.basename(path))}')
+        self.setWindowTitle(
+            f'Wafer Map Viewer  ·  {header.get("LOT", os.path.basename(path))}')
 
-        # populate design selector
         self.design_combo.blockSignals(True)
         self.design_combo.clear()
         if len(subs) > 1:
             self.design_combo.addItem('All designs (average)', None)
         for sn in subs:
             self.design_combo.addItem(f'Design {sn}', sn)
-        # default: first specific design (shows real single-design values)
         default_idx = 1 if len(subs) > 1 else 0
         self.design_combo.setCurrentIndex(default_idx)
         self._current_sub = self.design_combo.itemData(default_idx)
         self.design_combo.blockSignals(False)
 
-        # populate measurement combo
         self.mkey_combo.blockSignals(True)
         self.mkey_combo.clear()
         self.mkey_combo.addItems(params)
         self.mkey_combo.blockSignals(False)
 
-        # populate test filter tree
         self.test_tree.clear()
         groups: dict[str, list[str]] = defaultdict(list)
         for mk in params:
@@ -929,7 +1031,6 @@ class MainWindow(QMainWindow):
                 child.setForeground(0, QColor(T['text_secondary']))
                 child.setFont(0, QFont('Segoe UI', 12))
 
-        # auto-select first measurement
         if params:
             self._current_mkey = params[0]
             self.mkey_combo.setCurrentText(params[0])
@@ -1038,9 +1139,27 @@ class MainWindow(QMainWindow):
             'PNG Image (*.png);;JPEG Image (*.jpg)')
         if not path:
             return
-        px = self.canvas.grab()
+
+        SCALE = 3
+        lw = self.canvas.width()
+        lh = self.canvas.height()
+        pw = lw * SCALE
+        ph = lh * SCALE
+
+        px = QPixmap(pw, ph)
+        px.fill(Qt.transparent)
+
+        painter = QPainter(px)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.TextAntialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+        painter.scale(SCALE, SCALE)
+        self.canvas.render(painter)
+        painter.end()
+
         if px.save(path):
-            self.status.showMessage(f'  Exported  ·  {path}')
+            self.status.showMessage(
+                f'  Exported {pw}×{ph} px  ·  {path}')
         else:
             QMessageBox.critical(self, 'Export Error', 'Failed to save image.')
 
