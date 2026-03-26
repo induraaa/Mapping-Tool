@@ -1,5 +1,5 @@
 """
-Wafer Map Viewer  —  Keithley ACS KDF V1.2
+Wafer Map Viewer  —  Keithley ACS KDF V1.0
 Displays any KDF file as an interactive wafer map.
 Subsite number = design number; switch designs via the Design selector.
 
