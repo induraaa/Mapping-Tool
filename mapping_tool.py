@@ -244,6 +244,25 @@ QToolBar{
     spacing:4px;padding:5px 10px;
 }
 QToolBar::separator{background:""" + T['border'] + """;width:1px;margin:4px 8px;}
+QToolBar QToolButton{
+    background-color:""" + T['accent'] + """;
+    color:white;
+    border:1px solid """ + T['accent_dark'] + """;
+    border-radius:10px;
+    padding:6px 14px;
+    font-weight:700;
+    font-size:13px;
+    min-height:30px;
+}
+QToolBar QToolButton:hover{
+    background-color:""" + T['accent_dark'] + """;
+    border:1px solid """ + T['accent_dark'] + """;
+}
+QToolBar QToolButton:pressed{
+    background-color:""" + T['accent_dark'] + """;
+    padding-top:7px;   /* subtle "press" feel */
+    padding-bottom:5px;
+}
 """
 
 # ─────────────────────────────────────────────────────────────────────────────
