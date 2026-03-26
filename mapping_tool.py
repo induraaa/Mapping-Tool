@@ -757,18 +757,16 @@ class WaferCanvas(QWidget):
 # ─────────────────────────────────────────────────────────────────────────────
 
 class _DesignTintDelegate(QStyledItemDelegate):
-    def __init__(self, colors: list[QColor], role_design: int, role_highlight: int, parent=None):
+    def __init__(self, colors: list[QColor], role_design: int, parent=None):
         super().__init__(parent)
         self._colors = colors
         self._role_design = role_design
-        self._role_highlight = role_highlight
 
     def _color_for_design(self, design_num: int) -> QColor:
         return self._colors[(design_num - 1) % len(self._colors)]
 
     def paint(self, painter: QPainter, option, index):
         design_num = index.data(self._role_design)
-        is_hi = bool(index.data(self._role_highlight))
         if isinstance(design_num, int):
             base = QColor(self._color_for_design(design_num))
 
@@ -784,17 +782,6 @@ class _DesignTintDelegate(QStyledItemDelegate):
                 stripe.setAlpha(170)
                 r = option.rect
                 painter.fillRect(QRect(r.x(), r.y(), 4, r.height()), stripe)
-            painter.restore()
-
-        # Measurement highlight (when selected on the left): a soft accent overlay + left accent bar.
-        if is_hi:
-            painter.save()
-            overlay = QColor(T['accent_dim'])
-            overlay.setAlpha(90)
-            painter.fillRect(option.rect, overlay)
-            if index.column() == 0:
-                r = option.rect
-                painter.fillRect(QRect(r.x(), r.y(), 4, r.height()), QColor(T['accent']))
             painter.restore()
 
         super().paint(painter, option, index)
@@ -842,40 +829,9 @@ class SiteDetailPanel(QWidget):
             QColor("#455a64"),  # blue-grey
         ]
         self._role_design = int(Qt.UserRole) + 1
-        self._role_highlight = int(Qt.UserRole) + 2
-        self._highlight_mkey: str | None = None
         self.table.setItemDelegate(
-            _DesignTintDelegate(self._design_colors, self._role_design, self._role_highlight, self.table)
+            _DesignTintDelegate(self._design_colors, self._role_design, self.table)
         )
-
-    def set_highlight_measurement(self, mkey: str | None):
-        self._highlight_mkey = mkey
-        self._apply_highlight()
-
-    def _apply_highlight(self):
-        if self.table.rowCount() == 0:
-            return
-
-        target = self._highlight_mkey
-        first_match_row = None
-        for r in range(self.table.rowCount()):
-            mi = self.table.item(r, 0)
-            is_match = bool(target) and (mi is not None) and (mi.text() == target)
-            for c in range(self.table.columnCount()):
-                it = self.table.item(r, c)
-                if it is not None:
-                    it.setData(self._role_highlight, is_match)
-                    if is_match:
-                        it.setForeground(QColor(T['accent_dark']))
-                        f = it.font()
-                        f.setBold(True)
-                        it.setFont(f)
-            if is_match and first_match_row is None:
-                first_match_row = r
-
-        self.table.viewport().update()
-        if first_match_row is not None:
-            self.table.scrollToItem(self.table.item(first_match_row, 0), QTableWidget.PositionAtCenter)
 
     def _design_color(self, design_num: int) -> QColor:
         # stable color assignment per design number
@@ -920,9 +876,6 @@ class SiteDetailPanel(QWidget):
                 vi.setData(self._role_design, design_num)
 
             self.table.setItem(i, 2, vi)
-
-        # Re-apply highlight after re-populating the table.
-        self._apply_highlight()
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  STATISTICS PANEL
@@ -1261,7 +1214,6 @@ class MainWindow(QMainWindow):
         lo, hi = self._limits.get(mkey, (None, None))
         self.low_edit.setText('' if lo is None else str(lo))
         self.high_edit.setText('' if hi is None else str(hi))
-        self.detail_panel.set_highlight_measurement(mkey)
         self._refresh_canvas()
 
     def _apply_limits(self):
@@ -1315,7 +1267,6 @@ class MainWindow(QMainWindow):
 
     def _on_die_clicked(self, site: dict):
         self.detail_panel.show_site(site)
-        self.detail_panel.set_highlight_measurement(self._current_mkey)
 
     # ── export ────────────────────────────────────────────────────────────────
 
