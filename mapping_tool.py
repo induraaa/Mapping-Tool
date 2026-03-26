@@ -30,10 +30,11 @@ from PySide6.QtGui import (
 # ─────────────────────────────────────────────────────────────────────────────
 
 T = {
-    "bg_app":        "#f0f3f7",
-    "bg_panel":      "#ffffff",
-    "bg_header":     "#e8edf4",
-    "bg_row_alt":    "#f3f6fa",
+    # Slightly warm off-white theme (less stark than pure white)
+    "bg_app":        "#f2f0ec",
+    "bg_panel":      "#fbfaf7",
+    "bg_header":     "#efeae2",
+    "bg_row_alt":    "#f6f2ec",
     "border":        "#cdd6e3",
     "border_hi":     "#a0b4cc",
     "accent":        "#1565c0",
@@ -639,7 +640,8 @@ class WaferCanvas(QWidget):
 
         bh = len(items) * 22 + 16
         lx = 14; ly = h - bh - 10
-        p.setBrush(QColor(255, 255, 255, 215))
+        # Warm translucent legend panel
+        p.setBrush(QColor(255, 250, 242, 215))
         p.setPen(QPen(QColor(T['border']), 1))
         p.drawRoundedRect(QRectF(lx-6, ly-8, 178, bh), 8, 8)
         p.setFont(QFont('Segoe UI', 11))
@@ -732,20 +734,26 @@ class SiteDetailPanel(QWidget):
 
         self.table.setRowCount(len(rows))
         for i, (mkey, sub, val) in enumerate(rows):
+            multi = len(site.get('subsites', {})) > 1
+            tint = None
+            if multi:
+                c = self._design_color(int(sub))
+                tint = QColor(c)
+                tint.setAlpha(28)  # subtle but visible banding
+
             mi = QTableWidgetItem(mkey)
             mi.setFont(QFont('Segoe UI', 12))
+            if tint is not None:
+                mi.setBackground(tint)
             self.table.setItem(i, 0, mi)
 
             si = QTableWidgetItem(str(sub))
             si.setTextAlignment(Qt.AlignCenter)
             si.setForeground(QColor(T['text_secondary']))
             si.setFont(QFont('Segoe UI', 12))
-
-            # If multiple designs exist for this die, color-code by design number.
-            if len(site.get('subsites', {})) > 1:
-                c = self._design_color(int(sub))
-                si.setForeground(QColor("#ffffff"))
-                si.setBackground(c)
+            if tint is not None:
+                si.setBackground(tint)
+                si.setForeground(QColor(T['text_primary']))
 
             self.table.setItem(i, 1, si)
 
@@ -754,12 +762,8 @@ class SiteDetailPanel(QWidget):
             vi.setForeground(QColor(T['accent_dark']))
             vi.setFont(QFont('Consolas', 12, QFont.Bold))
 
-            if len(site.get('subsites', {})) > 1:
-                c = self._design_color(int(sub))
-                tint = QColor(c)
-                tint.setAlpha(22)
+            if tint is not None:
                 vi.setBackground(tint)
-                mi.setBackground(tint)
 
             self.table.setItem(i, 2, vi)
 
