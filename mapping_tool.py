@@ -1,5 +1,5 @@
 """
-Wafer Map Viewer  —  Keithley ACS KDF V1
+Wafer Map Viewer  —  Keithley ACS KDF V1.2
 Displays any KDF file as an interactive wafer map.
 Subsite number = design number; switch designs via the Design selector.
 
@@ -500,6 +500,7 @@ class WaferCanvas(QWidget):
         self.selected_site = None
         self._hover        = None
         self._rects        = {}
+        self._zoom         = 1.0
 
         self.setMinimumSize(400, 400)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -556,6 +557,29 @@ class WaferCanvas(QWidget):
         oy = (h - cell * n_rows) / 2.0
         return ox, oy, cell
 
+    # ── zoom controls ────────────────────────────────────────────────────────
+    def zoom_in(self):
+        self.set_zoom(self._zoom * 1.15)
+
+    def zoom_out(self):
+        self.set_zoom(self._zoom / 1.15)
+
+    def reset_zoom(self):
+        self.set_zoom(1.0)
+
+    def set_zoom(self, z: float):
+        z = max(0.6, min(3.5, float(z)))
+        if abs(z - self._zoom) < 1e-6:
+            return
+        self._zoom = z
+        self.update()
+
+    def _to_logical(self, pos: QPointF) -> QPointF:
+        # Map widget coords -> logical coords used by _rects when zoomed.
+        cx = self.width() / 2.0
+        cy = self.height() / 2.0
+        return QPointF((pos.x() - cx) / self._zoom + cx, (pos.y() - cy) / self._zoom + cy)
+
     def _die_color(self, name):
         v = self.values.get(name)
         if v is None:
@@ -586,12 +610,27 @@ class WaferCanvas(QWidget):
             p.drawText(self.rect(), Qt.AlignCenter, 'Open a KDF file to begin')
             return
 
-        x0, x1, y0, y1 = self._bounds()
-        ox, oy, cell    = self._layout(x0, x1, y0, y1, w, h)
+        # Zoom wafer content about the view center; draw legend unzoomed.
+        cx_dev = w / 2.0
+        cy_dev = h / 2.0
+        p.save()
+        p.translate(cx_dev, cy_dev)
+        p.scale(self._zoom, self._zoom)
+        p.translate(-cx_dev, -cy_dev)
 
-        cx = w / 2.0
-        cy = h / 2.0
-        radius_max = min(cx, w - cx, cy, h - cy) - 0.5
+        lw = w / self._zoom
+        lh = h / self._zoom
+        lx0 = cx_dev - lw / 2.0
+        ly0 = cy_dev - lh / 2.0
+
+        x0, x1, y0, y1 = self._bounds()
+        ox, oy, cell    = self._layout(x0, x1, y0, y1, lw, lh)
+        ox += lx0
+        oy += ly0
+
+        cx = cx_dev
+        cy = cy_dev
+        radius_max = min(lw / 2.0, lh / 2.0) - 0.5
         disc_margin = 2.0
         radius = max(1.0, radius_max - disc_margin)
 
@@ -661,6 +700,7 @@ class WaferCanvas(QWidget):
                 p.drawText(cr, Qt.AlignLeft | Qt.AlignTop,
                            f"{site['x']},{site['y']}")
 
+        p.restore()
         self._draw_legend(p, w, h)
 
     def _draw_legend(self, p, w, h):
@@ -687,7 +727,7 @@ class WaferCanvas(QWidget):
             ly += 22
 
     def mouseMoveEvent(self, e):
-        pos = QPointF(e.position()); self._hover = None
+        pos = self._to_logical(QPointF(e.position())); self._hover = None
         for site in self.sites:
             r = self._rects.get(site['name'])
             if r and r.contains(pos):
@@ -700,7 +740,7 @@ class WaferCanvas(QWidget):
 
     def mousePressEvent(self, e):
         if e.button() == Qt.LeftButton:
-            pos = QPointF(e.position())
+            pos = self._to_logical(QPointF(e.position()))
             for site in self.sites:
                 r = self._rects.get(site['name'])
                 if r and r.contains(pos):
