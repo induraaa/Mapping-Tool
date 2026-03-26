@@ -22,7 +22,7 @@ from PySide6.QtCore import Qt, QRectF, QPointF, Signal, QSize, QRect
 from PySide6.QtGui import (
     QPainter, QColor, QBrush, QPen, QFont,
     QLinearGradient, QRadialGradient, QPixmap, QIcon, QAction,
-    QPolygonF
+    QPolygonF, QImage, QImageWriter
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1134,11 +1134,19 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, 'Nothing to export',
                                     'Load a KDF file first.')
             return
-        path, _ = QFileDialog.getSaveFileName(
+        path, selected_filter = QFileDialog.getSaveFileName(
             self, 'Export Wafer Map', 'wafer_map.png',
             'PNG Image (*.png);;JPEG Image (*.jpg)')
         if not path:
             return
+
+        # Ensure a file extension so Qt can select an image writer reliably.
+        lower = path.lower()
+        if not (lower.endswith('.png') or lower.endswith('.jpg') or lower.endswith('.jpeg')):
+            if 'jpeg' in (selected_filter or '').lower() or 'jpg' in (selected_filter or '').lower():
+                path += '.jpg'
+            else:
+                path += '.png'
 
         SCALE = 3
         lw = self.canvas.width()
@@ -1146,10 +1154,10 @@ class MainWindow(QMainWindow):
         pw = lw * SCALE
         ph = lh * SCALE
 
-        px = QPixmap(pw, ph)
-        px.fill(Qt.transparent)
+        img = QImage(pw, ph, QImage.Format_ARGB32_Premultiplied)
+        img.fill(Qt.transparent)
 
-        painter = QPainter(px)
+        painter = QPainter(img)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setRenderHint(QPainter.TextAntialiasing)
         painter.setRenderHint(QPainter.SmoothPixmapTransform)
@@ -1157,11 +1165,22 @@ class MainWindow(QMainWindow):
         self.canvas.render(painter)
         painter.end()
 
-        if px.save(path):
+        fmt = b'PNG'
+        if path.lower().endswith(('.jpg', '.jpeg')):
+            fmt = b'JPEG'
+        writer = QImageWriter(path, fmt)
+        if fmt == b'JPEG':
+            writer.setQuality(95)
+
+        if writer.write(img):
             self.status.showMessage(
                 f'  Exported {pw}×{ph} px  ·  {path}')
         else:
-            QMessageBox.critical(self, 'Export Error', 'Failed to save image.')
+            QMessageBox.critical(
+                self,
+                'Export Error',
+                f'Failed to save image.\n\n{writer.errorString()}'
+            )
 
     # ── ui state ──────────────────────────────────────────────────────────────
 
