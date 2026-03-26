@@ -302,6 +302,20 @@ class ArrowComboBox(QComboBox):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def make_app_icon() -> QIcon:
+    # Prefer a local icon asset if present (portable across machines).
+    # Drop a `wafer_icon` file next to this script (e.g. wafer_icon.ico/png/icns).
+    base_dir = os.path.dirname(__file__)
+    preferred_exts = ('.ico', '.png', '.icns', '.jpg', '.jpeg')
+    try:
+        for name in os.listdir(base_dir):
+            low = name.lower()
+            if low.startswith('wafer_icon') and low.endswith(preferred_exts):
+                pth = os.path.join(base_dir, name)
+                if os.path.isfile(pth):
+                    return QIcon(pth)
+    except OSError:
+        pass
+
     icon = QIcon()
     for sz in (16, 24, 32, 48, 64, 128):
         pix = QPixmap(sz, sz)
@@ -875,6 +889,7 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
         self._update_ui_state()
+        self.showMaximized()
 
     def _build_ui(self):
         tb = QToolBar('Main', self)
@@ -910,17 +925,17 @@ class MainWindow(QMainWindow):
         mh = QHBoxLayout(cw); mh.setSpacing(10); mh.setContentsMargins(10, 10, 10, 10)
 
         # ── left panel ────────────────────────────────────────────────────────
-        left = QWidget(); left.setFixedWidth(282)
-        lv = QVBoxLayout(left); lv.setSpacing(10); lv.setContentsMargins(0, 0, 0, 0)
+        left = QWidget(); left.setFixedWidth(320)
+        lv = QVBoxLayout(left); lv.setSpacing(12); lv.setContentsMargins(0, 0, 0, 0)
 
         ib = QGroupBox('File Information')
-        iform = QFormLayout(ib); iform.setSpacing(6)
+        iform = QFormLayout(ib); iform.setSpacing(8)
         iform.setLabelAlignment(Qt.AlignRight)
 
         def mkval():
             l = QLabel('—')
             l.setStyleSheet(
-                f'color:{T["text_primary"]};font-weight:600;font-size:13px;')
+                f'color:{T["text_primary"]};font-weight:700;font-size:14px;')
             return l
 
         self.lbl_lot   = mkval(); self.lbl_sys   = mkval()
@@ -936,28 +951,30 @@ class MainWindow(QMainWindow):
             ('Designs', self.lbl_dsn),
         ]:
             kl = QLabel(lbl_txt)
-            kl.setStyleSheet(f'color:{T["text_secondary"]};font-size:12px;')
+            kl.setStyleSheet(f'color:{T["text_secondary"]};font-size:13px;')
             iform.addRow(kl, wid)
         lv.addWidget(ib)
 
         # design selector — uses ArrowComboBox
         db = QGroupBox('Design')
-        dv = QVBoxLayout(db); dv.setSpacing(6)
+        dv = QVBoxLayout(db); dv.setSpacing(8)
         desc = QLabel(
             'Each die may contain multiple designs.\n'
             'Select which design to display.')
         desc.setWordWrap(True)
-        desc.setStyleSheet(f'color:{T["text_secondary"]};font-size:11px;')
+        desc.setStyleSheet(f'color:{T["text_secondary"]};font-size:12px;')
         dv.addWidget(desc)
         self.design_combo = ArrowComboBox()
+        self.design_combo.setMinimumHeight(36)
         self.design_combo.currentIndexChanged.connect(self._on_design_changed)
         dv.addWidget(self.design_combo)
         lv.addWidget(db)
 
         # measurement selector — uses ArrowComboBox
         mb = QGroupBox('Measurement')
-        mv = QVBoxLayout(mb); mv.setSpacing(6)
+        mv = QVBoxLayout(mb); mv.setSpacing(8)
         self.mkey_combo = ArrowComboBox()
+        self.mkey_combo.setMinimumHeight(36)
         self.mkey_combo.currentTextChanged.connect(self._on_mkey_changed)
         mv.addWidget(self.mkey_combo)
         lv.addWidget(mb)
@@ -979,16 +996,6 @@ class MainWindow(QMainWindow):
         cb = QPushButton('Clear'); cb.clicked.connect(self._clear_limits)
         br.addWidget(ab); br.addWidget(cb); lbv.addLayout(br)
         lv.addWidget(lb)
-
-        # test filter tree
-        fb = QGroupBox('Filter by Test')
-        fv = QVBoxLayout(fb); fv.setSpacing(6)
-        self.test_tree = QTreeWidget()
-        self.test_tree.setHeaderHidden(True)
-        self.test_tree.setFixedHeight(180)
-        self.test_tree.itemDoubleClicked.connect(self._tree_double_click)
-        fv.addWidget(self.test_tree)
-        lv.addWidget(fb)
 
         lv.addStretch()
         mh.addWidget(left)
@@ -1075,23 +1082,6 @@ class MainWindow(QMainWindow):
         self.mkey_combo.addItems(params)
         self.mkey_combo.blockSignals(False)
 
-        self.test_tree.clear()
-        groups: dict[str, list[str]] = defaultdict(list)
-        for mk in params:
-            pts  = mk.split('@')
-            test = pts[1] if len(pts) >= 2 else 'Other'
-            groups[test].append(pts[0])
-
-        for test in sorted(groups):
-            parent = QTreeWidgetItem(self.test_tree, [test])
-            parent.setForeground(0, QColor(T['accent_dark']))
-            parent.setFont(0, QFont('Segoe UI', 12, QFont.Bold))
-            parent.setExpanded(True)
-            for param in sorted(groups[test]):
-                child = QTreeWidgetItem(parent, [f'{param}@{test}'])
-                child.setForeground(0, QColor(T['text_secondary']))
-                child.setFont(0, QFont('Segoe UI', 12))
-
         if params:
             self._current_mkey = params[0]
             self.mkey_combo.setCurrentText(params[0])
@@ -1116,11 +1106,6 @@ class MainWindow(QMainWindow):
         if self._current_mkey:
             self.status.showMessage(
                 f'  {self._current_mkey}  ·  {label}  ·  {len(self._sites)} sites')
-
-    def _tree_double_click(self, item, _col):
-        mk = item.text(0)
-        if mk in self._mkeys:
-            self.mkey_combo.setCurrentText(mk)
 
     def _on_mkey_changed(self, mkey: str):
         if mkey not in self._mkeys:
