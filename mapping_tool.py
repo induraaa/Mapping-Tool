@@ -1222,8 +1222,6 @@ class MainWindow(QMainWindow):
 
         self.design_combo.blockSignals(True)
         self.design_combo.clear()
-        if len(subs) > 1:
-            self.design_combo.addItem('All designs (average)', None)
 
         for sn in ordered:
             if limits_active:
@@ -1235,12 +1233,9 @@ class MainWindow(QMainWindow):
                 self.design_combo.addItem(f'Design {sn}', sn)
 
         # Restore selection if possible; otherwise pick first real design (or only).
-        if prev_sub is None and len(subs) > 1:
+        idx = self.design_combo.findData(prev_sub)
+        if idx < 0:
             idx = 0
-        else:
-            idx = self.design_combo.findData(prev_sub)
-            if idx < 0:
-                idx = 1 if len(subs) > 1 else 0
         self.design_combo.setCurrentIndex(idx)
         self._current_sub = self.design_combo.itemData(idx)
         self.design_combo.blockSignals(False)
@@ -1251,7 +1246,7 @@ class MainWindow(QMainWindow):
         self._current_sub = self.design_combo.itemData(idx)
         self._refresh_canvas()
         sub = self._current_sub
-        label = 'All designs (average)' if sub is None else f'Design {sub}'
+        label = f'Design {sub}' if sub is not None else 'Design'
         if self._current_mkey:
             self.status.showMessage(
                 f'  {self._current_mkey}  ·  {label}  ·  {len(self._sites)} sites')
@@ -1314,7 +1309,7 @@ class MainWindow(QMainWindow):
         self.canvas.load(self._sites, values, lo, hi, mkey=mkey)
         self.stats_panel.update_stats(values, lo, hi)
 
-        sub_label = 'avg' if sub is None else f'design {sub}'
+        sub_label = f'design {sub}' if sub is not None else 'design'
         lo_s = '—' if lo is None else str(lo)
         hi_s = '—' if hi is None else str(hi)
         self.status.showMessage(
