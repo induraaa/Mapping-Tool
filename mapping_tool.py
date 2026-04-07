@@ -142,7 +142,7 @@ QComboBox::down-arrow{
 QComboBox QAbstractItemView{
     background:""" + T['bg_panel'] + """;
     border:none;
-    border-radius:8px;
+    border-radius:0px;
     selection-background-color:""" + T['accent_dim'] + """;
     color:""" + T['text_primary'] + """;
     font-size:13px;
@@ -153,7 +153,7 @@ QComboBox QAbstractItemView{
 QComboBoxPrivateContainer{
     background:""" + T['bg_panel'] + """;
     border:1px solid """ + T['border_hi'] + """;
-    border-radius:8px;
+    border-radius:0px;
     padding:0px;
     margin:0px;
 }
@@ -299,6 +299,29 @@ QToolBar QToolButton:pressed{
 
 class ArrowComboBox(QComboBox):
     """QComboBox that paints a clean chevron arrow in the drop-down button."""
+
+    def showPopup(self):
+        super().showPopup()
+
+        # On Windows, the popup can have native shadow/frames that QSS can't remove.
+        # Force a square, no-shadow popup for a clean look.
+        popup = self.view().window()
+        if popup is None:
+            return
+        try:
+            popup.setWindowFlag(Qt.FramelessWindowHint, True)
+            popup.setWindowFlag(Qt.NoDropShadowWindowHint, True)
+        except Exception:
+            # Some Qt builds may not support NoDropShadowWindowHint; ignore gracefully.
+            popup.setWindowFlag(Qt.FramelessWindowHint, True)
+
+        popup.setAttribute(Qt.WA_TranslucentBackground, False)
+        popup.setStyleSheet(
+            f"background:{T['bg_panel']};"
+            f"border:1px solid {T['border_hi']};"
+            f"border-radius:0px;"
+        )
+        popup.show()
 
     def paintEvent(self, event):
         super().paintEvent(event)
