@@ -1178,10 +1178,22 @@ class MainWindow(QMainWindow):
             setattr(self, attr, en); row.addWidget(en); lbv.addLayout(row)
 
         self.prod_toggle = QCheckBox('Production limits')
+        self.prod_toggle.setObjectName('prodToggle')
+        self.prod_toggle.setStyleSheet(
+            f"QCheckBox#prodToggle{{background:transparent;border:none;padding:2px 0;}}"
+            f"QCheckBox#prodToggle::indicator{{"
+            f"width:14px;height:14px;border:1px solid {T['border_hi']};"
+            f"border-radius:3px;background:{T['bg_panel']};"
+            f"}}"
+            f"QCheckBox#prodToggle::indicator:checked{{"
+            f"background:{T['accent']};border:1px solid {T['accent_dark']};"
+            f"}}"
+        )
         self.prod_toggle.toggled.connect(self._on_prod_toggle)
         lbv.addWidget(self.prod_toggle)
 
         self.prod_limits_wrap = QWidget()
+        self.prod_limits_wrap.setStyleSheet("background:transparent;border:none;")
         plv = QVBoxLayout(self.prod_limits_wrap)
         plv.setContentsMargins(0, 0, 0, 0)
         plv.setSpacing(6)
@@ -1192,6 +1204,10 @@ class MainWindow(QMainWindow):
                 f'color:{T["text_secondary"]};font-size:12px;min-width:64px;')
             row.addWidget(rl)
             en = QLineEdit(); en.setPlaceholderText('no production limit')
+            en.setStyleSheet(
+                f"QLineEdit{{background:{T['bg_panel']};border:1px solid {T['border']};border-radius:8px;padding:5px 10px;}}"
+                f"QLineEdit:focus{{border:1px solid {T['accent']};}}"
+            )
             setattr(self, attr, en)
             row.addWidget(en)
             plv.addLayout(row)
