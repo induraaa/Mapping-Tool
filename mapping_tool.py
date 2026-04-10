@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QLabel, QFileDialog, QTreeWidget, QTreeWidgetItem, QGroupBox,
     QLineEdit, QFormLayout, QStatusBar, QComboBox,
     QMessageBox, QTabWidget, QTableWidget, QTableWidgetItem,
-    QHeaderView, QToolBar, QSizePolicy, QPushButton, QSpinBox, QCheckBox,
+    QHeaderView, QToolBar, QSizePolicy, QPushButton, QSpinBox, QCheckBox, QProgressBar,
     QStyle, QStyleOptionComboBox, QStyledItemDelegate
 )
 from PySide6.QtCore import Qt, QRectF, QPointF, QPoint, Signal, QSize, QRect
@@ -1053,6 +1053,8 @@ class MainWindow(QMainWindow):
         self._all_subsites: list[int]  = []
         self._current_sub:  int | None = None
         self._use_prod_limits: bool    = False
+        self._batch_records: list[dict] = []
+        self._batch_dir: str | None = None
 
         self._build_ui()
         self._update_ui_state()
@@ -1069,6 +1071,11 @@ class MainWindow(QMainWindow):
         open_act = QAction('  Open KDF…', self)
         open_act.triggered.connect(self.open_file)
         tb.addAction(open_act)
+        tb.addSeparator()
+
+        open_batch_act = QAction('  Open Batch Folder…', self)
+        open_batch_act.triggered.connect(self.open_batch_folder)
+        tb.addAction(open_batch_act)
         tb.addSeparator()
 
         exp_act = QAction('  Export Map…', self)
@@ -1244,6 +1251,48 @@ class MainWindow(QMainWindow):
 
         self.stats_panel = StatsPanel()
         tabs.addTab(self.stats_panel, 'Statistics')
+        self.batch_tab = QWidget()
+        btv = QVBoxLayout(self.batch_tab); btv.setContentsMargins(8, 8, 8, 8); btv.setSpacing(8)
+
+        bh = QHBoxLayout()
+        self.batch_open_btn = QPushButton('Open Batch Folder…')
+        self.batch_open_btn.clicked.connect(self.open_batch_folder)
+        bh.addWidget(self.batch_open_btn)
+        self.batch_mkey_combo = ArrowComboBox()
+        self.batch_mkey_combo.setMinimumHeight(34)
+        self.batch_mkey_combo.currentTextChanged.connect(self._update_batch_table)
+        bh.addWidget(self.batch_mkey_combo, stretch=1)
+        btv.addLayout(bh)
+
+        self.batch_progress = QProgressBar()
+        self.batch_progress.setMinimum(0)
+        self.batch_progress.setValue(0)
+        self.batch_progress.setVisible(False)
+        btv.addWidget(self.batch_progress)
+
+        self.batch_summary = QLabel('Open a folder with KDF files to analyze a batch.')
+        self.batch_summary.setWordWrap(True)
+        self.batch_summary.setStyleSheet(f'color:{T["text_secondary"]};font-size:12px;')
+        btv.addWidget(self.batch_summary)
+
+        self.batch_table = QTableWidget(0, 11)
+        self.batch_table.setHorizontalHeaderLabels([
+            'Wafer File', 'Lot', 'Designs', 'Design Used', 'Sites', 'Mean', 'Std Dev',
+            'Pass', 'Fail', 'Yield', 'Status'
+        ])
+        bth = self.batch_table.horizontalHeader()
+        bth.setSectionResizeMode(0, QHeaderView.Stretch)
+        for col in (1, 2, 3, 4, 7, 8, 9, 10):
+            bth.setSectionResizeMode(col, QHeaderView.ResizeToContents)
+        self.batch_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.batch_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.batch_table.setSelectionMode(QTableWidget.SingleSelection)
+        self.batch_table.verticalHeader().setVisible(False)
+        self.batch_table.setShowGrid(False)
+        self.batch_table.itemDoubleClicked.connect(self._open_batch_selected_wafer)
+        btv.addWidget(self.batch_table)
+
+        tabs.addTab(self.batch_tab, 'Batch Analysis')
 
         mh.addWidget(right)
 
@@ -1258,6 +1307,76 @@ class MainWindow(QMainWindow):
             'KDF Files (*.kdf *.KDF);;All Files (*)')
         if path:
             self._load_kdf(path)
+
+    def open_batch_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, 'Open Batch Folder', '')
+        if not folder:
+            return
+        self._load_batch_folder(folder)
+
+    def _load_batch_folder(self, folder: str):
+        try:
+            names = sorted(os.listdir(folder))
+        except OSError as e:
+            QMessageBox.critical(self, 'Folder Error', f'Could not read folder:\n{e}')
+            return
+
+        kdf_paths = [
+            os.path.join(folder, nm) for nm in names
+            if os.path.isfile(os.path.join(folder, nm)) and nm.lower().endswith('.kdf')
+        ]
+        if not kdf_paths:
+            QMessageBox.information(self, 'No KDF files', 'No .kdf files were found in this folder.')
+            return
+
+        self._batch_records = []
+        self._batch_dir = folder
+        self.batch_progress.setVisible(True)
+        self.batch_progress.setMaximum(len(kdf_paths))
+        self.batch_progress.setValue(0)
+        self.batch_summary.setText(f'Loading {len(kdf_paths)} wafer files...')
+        QApplication.processEvents()
+
+        failures = []
+        for idx, path in enumerate(kdf_paths, start=1):
+            try:
+                header, sites, mkeys, tests = parse_kdf(path)
+                subs = all_subsites(sites)
+                self._batch_records.append({
+                    'path': path,
+                    'name': os.path.basename(path),
+                    'header': header,
+                    'sites': sites,
+                    'mkeys': mkeys,
+                    'tests': tests,
+                    'subs': subs,
+                })
+            except Exception:
+                failures.append(os.path.basename(path))
+            self.batch_progress.setValue(idx)
+            self.batch_summary.setText(f'Loading {idx}/{len(kdf_paths)} wafer files...')
+            QApplication.processEvents()
+
+        mkeys = sorted({mk for rec in self._batch_records for mk in rec['mkeys']})
+        self.batch_mkey_combo.blockSignals(True)
+        self.batch_mkey_combo.clear()
+        self.batch_mkey_combo.addItems(mkeys)
+        self.batch_mkey_combo.blockSignals(False)
+        if mkeys:
+            if self._current_mkey and self._current_mkey in mkeys:
+                self.batch_mkey_combo.setCurrentText(self._current_mkey)
+            else:
+                self.batch_mkey_combo.setCurrentIndex(0)
+
+        self.batch_progress.setVisible(False)
+        self._update_batch_table()
+        self._update_ui_state()
+
+        ok_n = len(self._batch_records)
+        msg = f'Loaded batch: {ok_n}/{len(kdf_paths)} wafer files'
+        if failures:
+            msg += f'  ·  {len(failures)} failed to parse'
+        self.status.showMessage(f'  {msg}')
 
     def _load_kdf(self, path: str):
         try:
@@ -1308,6 +1427,7 @@ class MainWindow(QMainWindow):
             f'{len(params)} measurements  ·  '
             f'{len(tests)} tests  ·  '
             f'{len(subs)} design(s)  ·  {os.path.basename(path)}')
+        self._update_batch_table()
 
     # ── design / measurement / limits ─────────────────────────────────────────
 
@@ -1404,8 +1524,11 @@ class MainWindow(QMainWindow):
         self.high_edit.setText('' if hi is None else str(hi))
         self.prod_low_edit.setText('' if prod_lo is None else str(prod_lo))
         self.prod_high_edit.setText('' if prod_hi is None else str(prod_hi))
+        if self.batch_mkey_combo.findText(mkey) >= 0:
+            self.batch_mkey_combo.setCurrentText(mkey)
         self._rebuild_design_combo()
         self._refresh_canvas()
+        self._update_batch_table()
 
     def _apply_limits(self):
         lo = self._parse_limit(self.low_edit.text(),  'Low')
@@ -1424,6 +1547,7 @@ class MainWindow(QMainWindow):
             self._limits[self._current_mkey] = (lo, hi, prod_lo, prod_hi)
         self._rebuild_design_combo()
         self._refresh_canvas()
+        self._update_batch_table()
 
     def _clear_limits(self):
         self.low_edit.clear(); self.high_edit.clear()
@@ -1432,6 +1556,7 @@ class MainWindow(QMainWindow):
             self._limits[self._current_mkey] = (None, None, None, None)
         self._rebuild_design_combo()
         self._refresh_canvas()
+        self._update_batch_table()
 
     def _on_prod_toggle(self, checked: bool):
         self._use_prod_limits = bool(checked)
@@ -1439,6 +1564,7 @@ class MainWindow(QMainWindow):
         self._update_ui_state()
         self._rebuild_design_combo()
         self._refresh_canvas()
+        self._update_batch_table()
 
     def _parse_limit(self, text: str, label: str = '') -> float | None:
         text = text.strip()
@@ -1483,6 +1609,152 @@ class MainWindow(QMainWindow):
 
     def _on_die_clicked(self, site: dict):
         self.detail_panel.show_site(site)
+
+    # ── batch analysis ────────────────────────────────────────────────────────
+
+    def _batch_design_for_record(self, rec: dict) -> int | None:
+        subs = rec.get('subs') or []
+        if not subs:
+            return None
+        if self._current_sub is not None and self._current_sub in subs:
+            return self._current_sub
+        return subs[0]
+
+    def _batch_values_for_record(self, rec: dict, mkey: str):
+        design = self._batch_design_for_record(rec)
+        values = {}
+        for s in rec.get('sites', []):
+            values[s['name']] = get_site_value(s, mkey, design)
+        return design, values
+
+    def _update_batch_table(self, *_args):
+        if not hasattr(self, 'batch_table'):
+            return
+        if not self._batch_records:
+            self.batch_table.setRowCount(0)
+            return
+
+        mkey = self.batch_mkey_combo.currentText().strip()
+        if not mkey:
+            self.batch_table.setRowCount(0)
+            self.batch_summary.setText(
+                f'Loaded {len(self._batch_records)} wafers. No measurement selected.'
+            )
+            return
+
+        lo, hi, prod_lo, prod_hi = self._limits.get(mkey, (None, None, None, None))
+        use_prod = self._use_prod_limits and (prod_lo is not None or prod_hi is not None)
+
+        rows = []
+        total_valid = total_pass = 0
+        for rec in self._batch_records:
+            if mkey not in rec.get('mkeys', []):
+                rows.append({
+                    'rec': rec, 'designs': len(rec.get('subs', [])), 'design_used': '—',
+                    'sites': len(rec.get('sites', [])), 'mean': 'N/A', 'std': 'N/A',
+                    'pass': 0, 'fail': 0, 'yield': 'N/A', 'status': 'No measurement',
+                    'yield_num': -1.0,
+                })
+                continue
+
+            design, values = self._batch_values_for_record(rec, mkey)
+            vals = [v for v in values.values() if v is not None and math.isfinite(v)]
+            if vals:
+                mean_v = statistics.mean(vals)
+                std_v = statistics.pstdev(vals)
+            else:
+                mean_v = std_v = None
+
+            passed = 0
+            for v in vals:
+                in_spec = (lo is None or v >= lo) and (hi is None or v <= hi)
+                if not in_spec:
+                    continue
+                if use_prod:
+                    in_prod = (prod_lo is None or v >= prod_lo) and (prod_hi is None or v <= prod_hi)
+                    if not in_prod:
+                        continue
+                passed += 1
+            fail = max(0, len(vals) - passed)
+            yld = (passed / len(vals) * 100.0) if vals else None
+            total_valid += len(vals)
+            total_pass += passed
+
+            status = 'OK'
+            if len(rec.get('subs', [])) > 1:
+                status = 'Multi-design wafer'
+            if not vals:
+                status = 'No data'
+
+            rows.append({
+                'rec': rec,
+                'designs': len(rec.get('subs', [])),
+                'design_used': ('—' if design is None else str(design)),
+                'sites': len(rec.get('sites', [])),
+                'mean': si_fmt(mean_v) if mean_v is not None else 'N/A',
+                'std': si_fmt(std_v) if std_v is not None else 'N/A',
+                'pass': passed,
+                'fail': fail,
+                'yield': (f'{yld:.1f}%' if yld is not None else 'N/A'),
+                'status': status,
+                'yield_num': (-1.0 if yld is None else yld),
+            })
+
+        rows.sort(key=lambda r: r['yield_num'], reverse=True)
+
+        self.batch_table.setRowCount(len(rows))
+        for i, row in enumerate(rows):
+            rec = row['rec']
+            vals = [
+                rec['name'],
+                rec['header'].get('LOT', '—'),
+                str(row['designs']),
+                row['design_used'],
+                str(row['sites']),
+                row['mean'],
+                row['std'],
+                str(row['pass']),
+                str(row['fail']),
+                row['yield'],
+                row['status'],
+            ]
+            for col, txt in enumerate(vals):
+                it = QTableWidgetItem(txt)
+                if col in (7, 8):
+                    it.setTextAlignment(Qt.AlignCenter)
+                if col == 9:
+                    it.setTextAlignment(Qt.AlignCenter)
+                    if row['yield_num'] >= 90:
+                        it.setForeground(QColor(T['pass_fg']))
+                    elif row['yield_num'] >= 0 and row['yield_num'] < 70:
+                        it.setForeground(QColor(T['fail_fg']))
+                    elif row['yield_num'] >= 0:
+                        it.setForeground(QColor(T['warn']))
+                self.batch_table.setItem(i, col, it)
+            # store path in first column item for easy retrieval on double click
+            self.batch_table.item(i, 0).setData(Qt.UserRole, rec['path'])
+
+        overall = (total_pass / total_valid * 100.0) if total_valid else 0.0
+        prod_txt = 'on' if use_prod else 'off'
+        self.batch_summary.setText(
+            f'Batch folder: {self._batch_dir or "—"}\n'
+            f'Wafers: {len(rows)}  ·  Measurement: {mkey}  ·  Prod limits: {prod_txt}\n'
+            f'Overall pass: {total_pass}/{total_valid}  ·  Overall yield: {overall:.1f}%\n'
+            f'Tip: double-click a wafer row to open it in the wafer map view.'
+        )
+
+    def _open_batch_selected_wafer(self, item: QTableWidgetItem):
+        if item is None:
+            return
+        row = item.row()
+        it0 = self.batch_table.item(row, 0)
+        if it0 is None:
+            return
+        path = it0.data(Qt.UserRole)
+        if not path or not os.path.isfile(path):
+            QMessageBox.warning(self, 'File Missing', 'Selected wafer file is no longer available.')
+            return
+        self._load_kdf(path)
 
     # ── export ────────────────────────────────────────────────────────────────
 
@@ -1550,6 +1822,7 @@ class MainWindow(QMainWindow):
 
     def _update_ui_state(self):
         has = bool(self._sites)
+        has_batch = bool(self._batch_records)
         self.design_combo.setEnabled(has)
         self.mkey_combo.setEnabled(has)
         self.low_edit.setEnabled(has)
@@ -1557,6 +1830,7 @@ class MainWindow(QMainWindow):
         self.prod_toggle.setEnabled(has)
         self.prod_low_edit.setEnabled(has and self._use_prod_limits)
         self.prod_high_edit.setEnabled(has and self._use_prod_limits)
+        self.batch_mkey_combo.setEnabled(has_batch)
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  ENTRY POINT
