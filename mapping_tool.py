@@ -1300,6 +1300,9 @@ class MainWindow(QMainWindow):
         self.batch_table.setSelectionMode(QTableWidget.ExtendedSelection)
         self.batch_table.verticalHeader().setVisible(False)
         self.batch_table.setShowGrid(False)
+        # Keep the table compact; comparison canvases are the primary analysis area.
+        self.batch_table.setMinimumHeight(170)
+        self.batch_table.setMaximumHeight(230)
         self.batch_table.itemDoubleClicked.connect(self._open_batch_selected_wafer)
         self.batch_table.itemSelectionChanged.connect(self._compare_selected_wafers)
         btv.addWidget(self.batch_table)
@@ -1309,7 +1312,10 @@ class MainWindow(QMainWindow):
         self.batch_compare_summary.setStyleSheet(f'color:{T["text_secondary"]};font-size:12px;')
         btv.addWidget(self.batch_compare_summary)
 
-        compare_maps_row = QHBoxLayout()
+        compare_maps_wrap = QWidget()
+        compare_maps_row = QHBoxLayout(compare_maps_wrap)
+        compare_maps_row.setContentsMargins(0, 0, 0, 0)
+        compare_maps_row.setSpacing(8)
         self.batch_compare_cards = []
         for i in range(3):
             card = QGroupBox(f'Wafer {i + 1}')
@@ -1320,7 +1326,7 @@ class MainWindow(QMainWindow):
             meta.setWordWrap(True)
             meta.setStyleSheet(f'font-size:11px;color:{T["text_secondary"]};')
             canvas = WaferCanvas()
-            canvas.setMinimumSize(220, 220)
+            canvas.setMinimumSize(300, 300)
             cv.addWidget(title)
             cv.addWidget(meta)
             cv.addWidget(canvas, stretch=1)
@@ -1331,7 +1337,7 @@ class MainWindow(QMainWindow):
                 'meta': meta,
                 'canvas': canvas,
             })
-        btv.addLayout(compare_maps_row)
+        btv.addWidget(compare_maps_wrap, stretch=1)
 
         self.main_tabs.addTab(self.batch_tab, 'Batch Analysis')
 
