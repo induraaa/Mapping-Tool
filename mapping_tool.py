@@ -189,28 +189,6 @@ QLineEdit,QSpinBox{
     min-height:28px;
 }
 QLineEdit:focus,QSpinBox:focus{border:1px solid """ + T['accent'] + """;}
-QCheckBox{
-    color:""" + T['text_primary'] + """;
-    font-size:12px;
-    font-weight:600;
-    spacing:8px;
-    padding:2px 0;
-}
-QCheckBox::indicator{
-    width:16px;
-    height:16px;
-    border:1px solid """ + T['border_hi'] + """;
-    border-radius:4px;
-    background:""" + T['bg_panel'] + """;
-}
-QCheckBox::indicator:checked{
-    background:""" + T['accent'] + """;
-    border:1px solid """ + T['accent_dark'] + """;
-}
-QCheckBox::indicator:disabled{
-    background:""" + T['bg_header'] + """;
-    border:1px solid """ + T['border'] + """;
-}
 QSpinBox::up-button,QSpinBox::down-button{
     width:20px;
     background:""" + T['bg_header'] + """;
