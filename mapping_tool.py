@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QLabel, QFileDialog, QTreeWidget, QTreeWidgetItem, QGroupBox,
     QLineEdit, QFormLayout, QStatusBar, QComboBox,
     QMessageBox, QTabWidget, QTableWidget, QTableWidgetItem,
-    QHeaderView, QToolBar, QSizePolicy, QPushButton, QSpinBox,
+    QHeaderView, QToolBar, QSizePolicy, QPushButton, QSpinBox, QCheckBox,
     QStyle, QStyleOptionComboBox, QStyledItemDelegate
 )
 from PySide6.QtCore import Qt, QRectF, QPointF, QPoint, Signal, QSize, QRect
@@ -46,6 +46,9 @@ T = {
     "neutral_bg":    "#dfe8f3",
     "neutral_fg":    "#2c4a6e",
     "neutral_border":"#90a8c4",
+    "warn_bg":       "#fff6d6",
+    "warn_fg":       "#9b7800",
+    "warn_border":   "#e5c84a",
     "fail_bg":       "#fce8e8",
     "fail_fg":       "#b71c1c",
     "fail_border":   "#e57373",
@@ -547,6 +550,9 @@ class WaferCanvas(QWidget):
         self.values        = {}
         self.low_limit     = None
         self.high_limit    = None
+        self.prod_low_limit = None
+        self.prod_high_limit = None
+        self.show_prod_limits = False
         self.mkey          = ''
         self.selected_site = None
         self._hover        = None
@@ -557,9 +563,12 @@ class WaferCanvas(QWidget):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setMouseTracking(True)
 
-    def load(self, sites, values, lo, hi, mkey=''):
+    def load(self, sites, values, lo, hi, mkey='', prod_lo=None, prod_hi=None, show_prod=False):
         self.sites = sites; self.values = values
         self.low_limit = lo; self.high_limit = hi; self.mkey = mkey
+        self.prod_low_limit = prod_lo
+        self.prod_high_limit = prod_hi
+        self.show_prod_limits = bool(show_prod)
         self.selected_site = None; self._hover = None
         self.update()
 
@@ -638,10 +647,24 @@ class WaferCanvas(QWidget):
         if not self._limits_active:
             return QColor(T['neutral_bg']), QColor(T['neutral_fg']), QColor(T['neutral_border'])
         lo, hi  = self.low_limit, self.high_limit
-        passed  = (lo is None or v >= lo) and (hi is None or v <= hi)
-        if passed:
+        spec_passed  = (lo is None or v >= lo) and (hi is None or v <= hi)
+        if not spec_passed:
+            return QColor(T['fail_bg']), QColor(T['fail_fg']), QColor(T['fail_border'])
+
+        prod_active = self.show_prod_limits and (
+            self.prod_low_limit is not None or self.prod_high_limit is not None
+        )
+        if prod_active:
+            prod_passed = (
+                (self.prod_low_limit is None or v >= self.prod_low_limit) and
+                (self.prod_high_limit is None or v <= self.prod_high_limit)
+            )
+            if not prod_passed:
+                return QColor(T['warn_bg']), QColor(T['warn_fg']), QColor(T['warn_border'])
+
+        if spec_passed:
             return QColor(T['pass_bg']), QColor(T['pass_fg']), QColor(T['pass_border'])
-        return QColor(T['fail_bg']), QColor(T['fail_fg']), QColor(T['fail_border'])
+        return QColor(T['neutral_bg']), QColor(T['neutral_fg']), QColor(T['neutral_border'])
 
     def paintEvent(self, _event):
         p = QPainter(self)
@@ -755,12 +778,27 @@ class WaferCanvas(QWidget):
         self._draw_legend(p, w, h)
 
     def _draw_legend(self, p, w, h):
-        items = ([(T['pass_bg'],    T['pass_fg'],    'Pass'),
-                  (T['fail_bg'],    T['fail_fg'],    'Fail'),
-                  (T['nodata_bg'],  T['nodata_fg'],  'No data')]
-                 if self._limits_active else
-                 [(T['neutral_bg'], T['neutral_fg'], 'No limits set'),
-                  (T['nodata_bg'],  T['nodata_fg'],  'No data')])
+        prod_active = self.show_prod_limits and (
+            self.prod_low_limit is not None or self.prod_high_limit is not None
+        )
+        if self._limits_active and prod_active:
+            items = [
+                (T['pass_bg'], T['pass_fg'], 'Pass (production)'),
+                (T['warn_bg'], T['warn_fg'], 'Pass spec / Fail prod'),
+                (T['fail_bg'], T['fail_fg'], 'Fail spec'),
+                (T['nodata_bg'], T['nodata_fg'], 'No data'),
+            ]
+        elif self._limits_active:
+            items = [
+                (T['pass_bg'], T['pass_fg'], 'Pass'),
+                (T['fail_bg'], T['fail_fg'], 'Fail'),
+                (T['nodata_bg'], T['nodata_fg'], 'No data'),
+            ]
+        else:
+            items = [
+                (T['neutral_bg'], T['neutral_fg'], 'No limits set'),
+                (T['nodata_bg'], T['nodata_fg'], 'No data'),
+            ]
 
         bh = len(items) * 22 + 16
         lx = 14; ly = h - bh - 10
@@ -1014,6 +1052,7 @@ class MainWindow(QMainWindow):
         self._filepath:     str | None = None
         self._all_subsites: list[int]  = []
         self._current_sub:  int | None = None
+        self._use_prod_limits: bool    = False
 
         self._build_ui()
         self._update_ui_state()
@@ -1137,6 +1176,28 @@ class MainWindow(QMainWindow):
             row.addWidget(rl)
             en = QLineEdit(); en.setPlaceholderText('no limit')
             setattr(self, attr, en); row.addWidget(en); lbv.addLayout(row)
+
+        self.prod_toggle = QCheckBox('Use production limits (finer window)')
+        self.prod_toggle.toggled.connect(self._on_prod_toggle)
+        lbv.addWidget(self.prod_toggle)
+
+        self.prod_limits_wrap = QWidget()
+        plv = QVBoxLayout(self.prod_limits_wrap)
+        plv.setContentsMargins(0, 0, 0, 0)
+        plv.setSpacing(6)
+        for lbl_txt, attr in [('Prod Low', 'prod_low_edit'), ('Prod High', 'prod_high_edit')]:
+            row = QHBoxLayout()
+            rl = QLabel(lbl_txt)
+            rl.setStyleSheet(
+                f'color:{T["text_secondary"]};font-size:12px;min-width:64px;')
+            row.addWidget(rl)
+            en = QLineEdit(); en.setPlaceholderText('no production limit')
+            setattr(self, attr, en)
+            row.addWidget(en)
+            plv.addLayout(row)
+        self.prod_limits_wrap.setVisible(False)
+        lbv.addWidget(self.prod_limits_wrap)
+
         br = QHBoxLayout(); br.setSpacing(6)
         ab = QPushButton('Apply'); ab.setObjectName('primary')
         ab.clicked.connect(self._apply_limits)
@@ -1244,10 +1305,11 @@ class MainWindow(QMainWindow):
         prev_sub = self._current_sub
 
         mkey = self._current_mkey
-        lo = hi = None
+        lo = hi = prod_lo = prod_hi = None
         if mkey:
-            lo, hi = self._limits.get(mkey, (None, None))
+            lo, hi, prod_lo, prod_hi = self._limits.get(mkey, (None, None, None, None))
         limits_active = (lo is not None or hi is not None) and bool(mkey)
+        prod_active = self._use_prod_limits and (prod_lo is not None or prod_hi is not None)
 
         def pass_and_total_for(sub_num: int) -> tuple[int, int]:
             passed = 0
@@ -1257,7 +1319,15 @@ class MainWindow(QMainWindow):
                 if v is None:
                     continue
                 total += 1
-                if (lo is None or v >= lo) and (hi is None or v <= hi):
+                in_spec = (lo is None or v >= lo) and (hi is None or v <= hi)
+                if not in_spec:
+                    continue
+                if prod_active:
+                    in_prod = (prod_lo is None or v >= prod_lo) and (prod_hi is None or v <= prod_hi)
+                    if not in_prod:
+                        continue
+                    passed += 1
+                else:
                     passed += 1
             return passed, total
 
@@ -1308,31 +1378,48 @@ class MainWindow(QMainWindow):
         if self._current_mkey:
             lo = self._parse_limit(self.low_edit.text())
             hi = self._parse_limit(self.high_edit.text())
-            self._limits[self._current_mkey] = (lo, hi)
+            prod_lo = self._parse_limit(self.prod_low_edit.text())
+            prod_hi = self._parse_limit(self.prod_high_edit.text())
+            self._limits[self._current_mkey] = (lo, hi, prod_lo, prod_hi)
 
         self._current_mkey = mkey
-        lo, hi = self._limits.get(mkey, (None, None))
+        lo, hi, prod_lo, prod_hi = self._limits.get(mkey, (None, None, None, None))
         self.low_edit.setText('' if lo is None else str(lo))
         self.high_edit.setText('' if hi is None else str(hi))
+        self.prod_low_edit.setText('' if prod_lo is None else str(prod_lo))
+        self.prod_high_edit.setText('' if prod_hi is None else str(prod_hi))
         self._rebuild_design_combo()
         self._refresh_canvas()
 
     def _apply_limits(self):
         lo = self._parse_limit(self.low_edit.text(),  'Low')
         hi = self._parse_limit(self.high_edit.text(), 'High')
+        prod_lo = self._parse_limit(self.prod_low_edit.text(),  'Prod Low')
+        prod_hi = self._parse_limit(self.prod_high_edit.text(), 'Prod High')
         if lo is None and self.low_edit.text().strip():
             return
         if hi is None and self.high_edit.text().strip():
             return
+        if prod_lo is None and self.prod_low_edit.text().strip():
+            return
+        if prod_hi is None and self.prod_high_edit.text().strip():
+            return
         if self._current_mkey:
-            self._limits[self._current_mkey] = (lo, hi)
+            self._limits[self._current_mkey] = (lo, hi, prod_lo, prod_hi)
         self._rebuild_design_combo()
         self._refresh_canvas()
 
     def _clear_limits(self):
         self.low_edit.clear(); self.high_edit.clear()
+        self.prod_low_edit.clear(); self.prod_high_edit.clear()
         if self._current_mkey:
-            self._limits[self._current_mkey] = (None, None)
+            self._limits[self._current_mkey] = (None, None, None, None)
+        self._rebuild_design_combo()
+        self._refresh_canvas()
+
+    def _on_prod_toggle(self, checked: bool):
+        self._use_prod_limits = bool(checked)
+        self.prod_limits_wrap.setVisible(self._use_prod_limits)
         self._rebuild_design_combo()
         self._refresh_canvas()
 
@@ -1353,19 +1440,28 @@ class MainWindow(QMainWindow):
             return
         mkey   = self._current_mkey
         sub    = self._current_sub
-        lo, hi = self._limits.get(mkey, (None, None))
+        lo, hi, prod_lo, prod_hi = self._limits.get(mkey, (None, None, None, None))
 
         values = {s['name']: get_site_value(s, mkey, sub) for s in self._sites}
 
-        self.canvas.load(self._sites, values, lo, hi, mkey=mkey)
+        self.canvas.load(
+            self._sites, values, lo, hi, mkey=mkey,
+            prod_lo=prod_lo, prod_hi=prod_hi, show_prod=self._use_prod_limits
+        )
         self.stats_panel.update_stats(values, lo, hi)
 
         sub_label = f'design {sub}' if sub is not None else 'design'
         lo_s = '—' if lo is None else str(lo)
         hi_s = '—' if hi is None else str(hi)
+        plo_s = '—' if prod_lo is None else str(prod_lo)
+        phi_s = '—' if prod_hi is None else str(prod_hi)
+        prod_label = 'off'
+        if self._use_prod_limits:
+            prod_label = f'Low = {plo_s}  High = {phi_s}'
         self.status.showMessage(
             f'  {mkey}  ·  {sub_label}'
             f'  ·  Low = {lo_s}  High = {hi_s}'
+            f'  ·  Prod: {prod_label}'
             f'  ·  {len(self._sites)} sites')
 
     def _on_die_clicked(self, site: dict):
@@ -1441,6 +1537,9 @@ class MainWindow(QMainWindow):
         self.mkey_combo.setEnabled(has)
         self.low_edit.setEnabled(has)
         self.high_edit.setEnabled(has)
+        self.prod_toggle.setEnabled(has)
+        self.prod_low_edit.setEnabled(has and self._use_prod_limits)
+        self.prod_high_edit.setEnabled(has and self._use_prod_limits)
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  ENTRY POINT
@@ -1459,3 +1558,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
