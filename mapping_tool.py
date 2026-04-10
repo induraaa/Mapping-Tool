@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QFormLayout, QStatusBar, QComboBox,
     QMessageBox, QTabWidget, QTableWidget, QTableWidgetItem,
     QHeaderView, QToolBar, QSizePolicy, QPushButton, QSpinBox, QCheckBox, QProgressBar,
+    QScrollArea,
     QStyle, QStyleOptionComboBox, QStyledItemDelegate
 )
 from PySide6.QtCore import Qt, QRectF, QPointF, QPoint, Signal, QSize, QRect
@@ -1148,6 +1149,12 @@ class MainWindow(QMainWindow):
             iform.addRow(kl, wid)
         lv.addWidget(ib)
 
+        self.left_batch_btn = QPushButton('Load Batch Folder…')
+        self.left_batch_btn.setObjectName('primary')
+        self.left_batch_btn.setMinimumHeight(34)
+        self.left_batch_btn.clicked.connect(self.open_batch_folder)
+        lv.addWidget(self.left_batch_btn)
+
         # design selector — uses ArrowComboBox
         db = QGroupBox('Design')
         dv = QVBoxLayout(db); dv.setSpacing(8)
@@ -1255,7 +1262,16 @@ class MainWindow(QMainWindow):
         self.main_tabs.addTab(wafer_page, 'Wafer View')
 
         self.batch_tab = QWidget()
-        btv = QVBoxLayout(self.batch_tab); btv.setContentsMargins(8, 8, 8, 8); btv.setSpacing(8)
+        batch_outer = QVBoxLayout(self.batch_tab)
+        batch_outer.setContentsMargins(0, 0, 0, 0)
+        batch_outer.setSpacing(0)
+        self.batch_scroll = QScrollArea()
+        self.batch_scroll.setWidgetResizable(True)
+        self.batch_scroll.setFrameShape(QScrollArea.NoFrame)
+        batch_outer.addWidget(self.batch_scroll)
+        batch_content = QWidget()
+        self.batch_scroll.setWidget(batch_content)
+        btv = QVBoxLayout(batch_content); btv.setContentsMargins(8, 8, 8, 8); btv.setSpacing(8)
 
         bh = QHBoxLayout()
         self.batch_mkey_combo = ArrowComboBox()
@@ -1337,7 +1353,8 @@ class MainWindow(QMainWindow):
                 'meta': meta,
                 'canvas': canvas,
             })
-        btv.addWidget(compare_maps_wrap, stretch=1)
+        btv.addWidget(compare_maps_wrap)
+        btv.addStretch()
 
         self.main_tabs.addTab(self.batch_tab, 'Batch Analysis')
 
