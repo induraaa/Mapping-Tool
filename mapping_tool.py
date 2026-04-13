@@ -1273,6 +1273,14 @@ class MainWindow(QMainWindow):
         batch_content = QWidget()
         self.batch_scroll.setWidget(batch_content)
         btv = QVBoxLayout(batch_content); btv.setContentsMargins(8, 8, 8, 8); btv.setSpacing(8)
+        self.batch_sections = QTabWidget()
+        btv.addWidget(self.batch_sections)
+        batch_analytics_page = QWidget()
+        bav = QVBoxLayout(batch_analytics_page); bav.setContentsMargins(8, 8, 8, 8); bav.setSpacing(8)
+        self.batch_sections.addTab(batch_analytics_page, 'Analytics')
+        batch_limits_page = QWidget()
+        blv = QVBoxLayout(batch_limits_page); blv.setContentsMargins(8, 8, 8, 8); blv.setSpacing(8)
+        self.batch_sections.addTab(batch_limits_page, 'Limits')
 
         controls = QGroupBox('Batch Controls')
         ch = QHBoxLayout(controls); ch.setSpacing(8)
@@ -1295,18 +1303,18 @@ class MainWindow(QMainWindow):
         self.batch_export_btn = QPushButton('Export Batch Report…')
         self.batch_export_btn.clicked.connect(self._export_batch_report)
         ch.addWidget(self.batch_export_btn)
-        btv.addWidget(controls)
+        bav.addWidget(controls)
 
         self.batch_progress = QProgressBar()
         self.batch_progress.setMinimum(0)
         self.batch_progress.setValue(0)
         self.batch_progress.setVisible(False)
-        btv.addWidget(self.batch_progress)
+        bav.addWidget(self.batch_progress)
 
         self.batch_summary = QLabel('Open a folder with KDF files to analyze a batch.')
         self.batch_summary.setWordWrap(True)
         self.batch_summary.setStyleSheet(f'color:{T["text_secondary"]};font-size:12px;')
-        btv.addWidget(self.batch_summary)
+        bav.addWidget(self.batch_summary)
 
         self.batch_table = QTableWidget(0, 11)
         self.batch_table.setHorizontalHeaderLabels([
@@ -1326,7 +1334,7 @@ class MainWindow(QMainWindow):
         self.batch_table.setMaximumHeight(260)
         self.batch_table.itemDoubleClicked.connect(self._open_batch_selected_wafer)
         self.batch_table.itemSelectionChanged.connect(self._compare_selected_wafers)
-        btv.addWidget(self.batch_table)
+        bav.addWidget(self.batch_table)
 
         trend_box = QGroupBox('Trend By Wafer Order')
         tv = QVBoxLayout(trend_box); tv.setContentsMargins(8, 8, 8, 8)
@@ -1341,7 +1349,7 @@ class MainWindow(QMainWindow):
         self.batch_trend_table.verticalHeader().setVisible(False)
         self.batch_trend_table.setMaximumHeight(220)
         tv.addWidget(self.batch_trend_table)
-        btv.addWidget(trend_box)
+        bav.addWidget(trend_box)
 
         radial_box = QGroupBox('Within-Wafer Radial Analysis')
         rvb = QVBoxLayout(radial_box); rvb.setContentsMargins(8, 8, 8, 8)
@@ -1356,7 +1364,7 @@ class MainWindow(QMainWindow):
         self.batch_radial_table.verticalHeader().setVisible(False)
         self.batch_radial_table.setMaximumHeight(220)
         rvb.addWidget(self.batch_radial_table)
-        btv.addWidget(radial_box)
+        bav.addWidget(radial_box)
 
         golden_box = QGroupBox('Golden Wafer Scoring')
         gv = QVBoxLayout(golden_box); gv.setContentsMargins(8, 8, 8, 8)
@@ -1377,12 +1385,12 @@ class MainWindow(QMainWindow):
         self.batch_golden_table.verticalHeader().setVisible(False)
         self.batch_golden_table.setMaximumHeight(220)
         gv.addWidget(self.batch_golden_table)
-        btv.addWidget(golden_box)
+        bav.addWidget(golden_box)
 
         self.batch_compare_summary = QLabel('Select two or more wafers to compare.')
         self.batch_compare_summary.setWordWrap(True)
         self.batch_compare_summary.setStyleSheet(f'color:{T["text_secondary"]};font-size:12px;')
-        btv.addWidget(self.batch_compare_summary)
+        bav.addWidget(self.batch_compare_summary)
 
         compare_maps_wrap = QWidget()
         compare_maps_row = QHBoxLayout(compare_maps_wrap)
@@ -1409,8 +1417,44 @@ class MainWindow(QMainWindow):
                 'meta': meta,
                 'canvas': canvas,
             })
-        btv.addWidget(compare_maps_wrap)
-        btv.addStretch()
+        bav.addWidget(compare_maps_wrap)
+        bav.addStretch()
+
+        limits_box = QGroupBox('Batch Measurement Limits')
+        ll = QVBoxLayout(limits_box); ll.setSpacing(8)
+        row1 = QHBoxLayout()
+        row1.addWidget(QLabel('Spec Low'))
+        self.batch_low_edit = QLineEdit(); self.batch_low_edit.setPlaceholderText('no limit')
+        row1.addWidget(self.batch_low_edit)
+        row1.addWidget(QLabel('Spec High'))
+        self.batch_high_edit = QLineEdit(); self.batch_high_edit.setPlaceholderText('no limit')
+        row1.addWidget(self.batch_high_edit)
+        ll.addLayout(row1)
+
+        self.batch_prod_toggle = QCheckBox('Use production limits')
+        self.batch_prod_toggle.toggled.connect(self._on_batch_prod_toggle)
+        ll.addWidget(self.batch_prod_toggle)
+
+        row2 = QHBoxLayout()
+        row2.addWidget(QLabel('Prod Low'))
+        self.batch_prod_low_edit = QLineEdit(); self.batch_prod_low_edit.setPlaceholderText('no limit')
+        row2.addWidget(self.batch_prod_low_edit)
+        row2.addWidget(QLabel('Prod High'))
+        self.batch_prod_high_edit = QLineEdit(); self.batch_prod_high_edit.setPlaceholderText('no limit')
+        row2.addWidget(self.batch_prod_high_edit)
+        ll.addLayout(row2)
+
+        br = QHBoxLayout()
+        self.batch_limits_apply_btn = QPushButton('Apply Limits')
+        self.batch_limits_apply_btn.setObjectName('primary')
+        self.batch_limits_apply_btn.clicked.connect(self._apply_batch_limits)
+        self.batch_limits_clear_btn = QPushButton('Clear Limits')
+        self.batch_limits_clear_btn.clicked.connect(self._clear_batch_limits)
+        br.addWidget(self.batch_limits_apply_btn)
+        br.addWidget(self.batch_limits_clear_btn)
+        ll.addLayout(br)
+        blv.addWidget(limits_box)
+        blv.addStretch()
 
         self.main_tabs.addTab(self.batch_tab, 'Batch Analysis')
 
@@ -1441,6 +1485,21 @@ class MainWindow(QMainWindow):
     def _set_active_wafer_tab(self):
         if hasattr(self, 'main_tabs'):
             self.main_tabs.setCurrentIndex(0)
+
+    def _sync_batch_limit_controls(self):
+        if not hasattr(self, 'batch_low_edit'):
+            return
+        mkey = self.batch_mkey_combo.currentText().strip()
+        lo, hi, prod_lo, prod_hi = self._limits.get(mkey, (None, None, None, None))
+        self.batch_low_edit.setText('' if lo is None else str(lo))
+        self.batch_high_edit.setText('' if hi is None else str(hi))
+        self.batch_prod_low_edit.setText('' if prod_lo is None else str(prod_lo))
+        self.batch_prod_high_edit.setText('' if prod_hi is None else str(prod_hi))
+        self.batch_prod_toggle.blockSignals(True)
+        self.batch_prod_toggle.setChecked(self._use_prod_limits)
+        self.batch_prod_toggle.blockSignals(False)
+        self.batch_prod_low_edit.setEnabled(self._use_prod_limits)
+        self.batch_prod_high_edit.setEnabled(self._use_prod_limits)
 
     def _load_batch_folder(self, folder: str):
         try:
@@ -1496,6 +1555,7 @@ class MainWindow(QMainWindow):
                 self.batch_mkey_combo.setCurrentText(self._current_mkey)
             else:
                 self.batch_mkey_combo.setCurrentIndex(0)
+        self._sync_batch_limit_controls()
 
         self.batch_progress.setVisible(False)
         self._update_batch_table()
@@ -1558,6 +1618,7 @@ class MainWindow(QMainWindow):
             f'{len(subs)} design(s)  ·  {os.path.basename(path)}')
         self._update_batch_table()
         self._set_active_wafer_tab()
+        self._sync_batch_limit_controls()
 
     # ── design / measurement / limits ─────────────────────────────────────────
 
@@ -1656,6 +1717,7 @@ class MainWindow(QMainWindow):
         self.prod_high_edit.setText('' if prod_hi is None else str(prod_hi))
         if self.batch_mkey_combo.findText(mkey) >= 0:
             self.batch_mkey_combo.setCurrentText(mkey)
+        self._sync_batch_limit_controls()
         self._rebuild_design_combo()
         self._refresh_canvas()
         self._update_batch_table()
@@ -1675,8 +1737,11 @@ class MainWindow(QMainWindow):
             return
         if self._current_mkey:
             self._limits[self._current_mkey] = (lo, hi, prod_lo, prod_hi)
+            if self.batch_mkey_combo.currentText().strip() == self._current_mkey:
+                self._limits[self.batch_mkey_combo.currentText().strip()] = (lo, hi, prod_lo, prod_hi)
         self._rebuild_design_combo()
         self._refresh_canvas()
+        self._sync_batch_limit_controls()
         self._update_batch_table()
 
     def _clear_limits(self):
@@ -1684,14 +1749,80 @@ class MainWindow(QMainWindow):
         self.prod_low_edit.clear(); self.prod_high_edit.clear()
         if self._current_mkey:
             self._limits[self._current_mkey] = (None, None, None, None)
+            if self.batch_mkey_combo.currentText().strip() == self._current_mkey:
+                self._limits[self.batch_mkey_combo.currentText().strip()] = (None, None, None, None)
         self._rebuild_design_combo()
         self._refresh_canvas()
+        self._sync_batch_limit_controls()
         self._update_batch_table()
 
     def _on_prod_toggle(self, checked: bool):
         self._use_prod_limits = bool(checked)
         self.prod_limits_wrap.setVisible(self._use_prod_limits)
+        self.batch_prod_toggle.blockSignals(True)
+        self.batch_prod_toggle.setChecked(self._use_prod_limits)
+        self.batch_prod_toggle.blockSignals(False)
+        self.batch_prod_low_edit.setEnabled(self._use_prod_limits)
+        self.batch_prod_high_edit.setEnabled(self._use_prod_limits)
         self._update_ui_state()
+        self._rebuild_design_combo()
+        self._refresh_canvas()
+        self._update_batch_table()
+
+    def _on_batch_prod_toggle(self, checked: bool):
+        self._use_prod_limits = bool(checked)
+        self.prod_toggle.blockSignals(True)
+        self.prod_toggle.setChecked(self._use_prod_limits)
+        self.prod_toggle.blockSignals(False)
+        self.prod_limits_wrap.setVisible(self._use_prod_limits)
+        self.batch_prod_low_edit.setEnabled(self._use_prod_limits)
+        self.batch_prod_high_edit.setEnabled(self._use_prod_limits)
+        self._update_ui_state()
+        self._rebuild_design_combo()
+        self._refresh_canvas()
+        self._update_batch_table()
+
+    def _apply_batch_limits(self):
+        mkey = self.batch_mkey_combo.currentText().strip() or self._current_mkey
+        if not mkey:
+            QMessageBox.information(self, 'No measurement', 'Select a measurement first.')
+            return
+        lo = self._parse_limit(self.batch_low_edit.text(), 'Spec Low')
+        hi = self._parse_limit(self.batch_high_edit.text(), 'Spec High')
+        prod_lo = self._parse_limit(self.batch_prod_low_edit.text(), 'Prod Low')
+        prod_hi = self._parse_limit(self.batch_prod_high_edit.text(), 'Prod High')
+        if lo is None and self.batch_low_edit.text().strip():
+            return
+        if hi is None and self.batch_high_edit.text().strip():
+            return
+        if prod_lo is None and self.batch_prod_low_edit.text().strip():
+            return
+        if prod_hi is None and self.batch_prod_high_edit.text().strip():
+            return
+        self._limits[mkey] = (lo, hi, prod_lo, prod_hi)
+        if self._current_mkey == mkey:
+            self.low_edit.setText('' if lo is None else str(lo))
+            self.high_edit.setText('' if hi is None else str(hi))
+            self.prod_low_edit.setText('' if prod_lo is None else str(prod_lo))
+            self.prod_high_edit.setText('' if prod_hi is None else str(prod_hi))
+        self._rebuild_design_combo()
+        self._refresh_canvas()
+        self._update_batch_table()
+
+    def _clear_batch_limits(self):
+        mkey = self.batch_mkey_combo.currentText().strip() or self._current_mkey
+        if not mkey:
+            return
+        self.batch_low_edit.clear()
+        self.batch_high_edit.clear()
+        self.batch_prod_low_edit.clear()
+        self.batch_prod_high_edit.clear()
+        self._limits[mkey] = (None, None, None, None)
+        if self._current_mkey == mkey:
+            self.low_edit.clear()
+            self.high_edit.clear()
+            self.prod_low_edit.clear()
+            self.prod_high_edit.clear()
         self._rebuild_design_combo()
         self._refresh_canvas()
         self._update_batch_table()
@@ -1771,6 +1902,7 @@ class MainWindow(QMainWindow):
     def _update_batch_table(self, *_args):
         if not hasattr(self, 'batch_table'):
             return
+        self._sync_batch_limit_controls()
         if not self._batch_records:
             self.batch_table.setRowCount(0)
             self.batch_compare_summary.setText('Select two or more wafers to compare.')
@@ -2364,6 +2496,13 @@ class MainWindow(QMainWindow):
         self.batch_compare_btn.setEnabled(has_batch)
         self.batch_export_btn.setEnabled(has_batch)
         self.batch_golden_combo.setEnabled(has_batch)
+        self.batch_low_edit.setEnabled(has_batch)
+        self.batch_high_edit.setEnabled(has_batch)
+        self.batch_prod_toggle.setEnabled(has_batch)
+        self.batch_prod_low_edit.setEnabled(has_batch and self._use_prod_limits)
+        self.batch_prod_high_edit.setEnabled(has_batch and self._use_prod_limits)
+        self.batch_limits_apply_btn.setEnabled(has_batch)
+        self.batch_limits_clear_btn.setEnabled(has_batch)
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  ENTRY POINT
