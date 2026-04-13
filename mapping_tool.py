@@ -7,7 +7,7 @@ Requirements:  pip install PySide6
 Usage:         python wafer_mapper_light.py [file.kdf]
 """
 
-import sys, os, re, math, statistics, csv
+import sys, os, re, math, statistics
 from collections import defaultdict
 
 from PySide6.QtWidgets import (
@@ -23,7 +23,7 @@ from PySide6.QtCore import Qt, QRectF, QPointF, QPoint, Signal, QSize, QRect
 from PySide6.QtGui import (
     QPainter, QColor, QBrush, QPen, QFont,
     QLinearGradient, QRadialGradient, QPixmap, QIcon, QAction,
-    QPolygonF, QImage, QImageWriter, QPdfWriter, QPageSize
+    QPolygonF, QImage, QImageWriter
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1305,12 +1305,9 @@ class MainWindow(QMainWindow):
         self.batch_compare_btn = QPushButton('Compare Selected')
         self.batch_compare_btn.clicked.connect(self._compare_selected_wafers)
         ch.addWidget(self.batch_compare_btn)
-        self.batch_export_csv_btn = QPushButton('Export CSV…')
-        self.batch_export_csv_btn.clicked.connect(self._export_batch_csv)
-        ch.addWidget(self.batch_export_csv_btn)
-        self.batch_export_pdf_btn = QPushButton('Export PDF Summary…')
-        self.batch_export_pdf_btn.clicked.connect(self._export_batch_pdf)
-        ch.addWidget(self.batch_export_pdf_btn)
+        self.batch_export_report_btn = QPushButton('Export Batch Report…')
+        self.batch_export_report_btn.clicked.connect(self._export_batch_report)
+        ch.addWidget(self.batch_export_report_btn)
         bav.addWidget(controls)
 
         self.batch_progress = QProgressBar()
@@ -2307,126 +2304,98 @@ class MainWindow(QMainWindow):
             return
         self._load_kdf(path)
 
-    def _render_wafer_snapshot(self, rec: dict, mkey: str, size: int = 260) -> QImage:
-        design = self._batch_design_for_record(rec)
-        lo, hi, prod_lo, prod_hi = self._limits.get(mkey, (None, None, None, None))
-        use_prod = self._use_prod_limits and (prod_lo is not None or prod_hi is not None)
-        values = {s['name']: get_site_value(s, mkey, design) for s in rec.get('sites', [])}
-        canvas = WaferCanvas()
-        canvas.resize(size, size)
-        canvas.load(
-            rec.get('sites', []), values, lo, hi, mkey=mkey,
-            prod_lo=prod_lo, prod_hi=prod_hi, show_prod=use_prod
-        )
-        img = QImage(size, size, QImage.Format_ARGB32_Premultiplied)
-        img.fill(Qt.white)
-        p = QPainter(img)
-        canvas.render(p, QPoint(0, 0))
-        p.end()
-        return img
-
-    def _export_batch_csv(self):
+    def _export_batch_report(self):
         if not self._batch_rows:
             QMessageBox.information(self, 'No batch data', 'Load a batch folder first.')
             return
-        default_name = 'batch_report.csv'
+        default_name = 'batch_report.xlsx'
         if self._batch_dir:
-            default_name = f'{os.path.basename(self._batch_dir)}_batch_report.csv'
-        csv_path, _ = QFileDialog.getSaveFileName(
-            self, 'Export Batch Report CSV', default_name, 'CSV Files (*.csv)'
+            default_name = f'{os.path.basename(self._batch_dir)}_batch_report.xlsx'
+        out_path, _ = QFileDialog.getSaveFileName(
+            self, 'Export Batch Report (Excel)', default_name, 'Excel Workbook (*.xlsx)'
         )
-        if not csv_path:
+        if not out_path:
             return
-        if not csv_path.lower().endswith('.csv'):
-            csv_path += '.csv'
+        if not out_path.lower().endswith('.xlsx'):
+            out_path += '.xlsx'
 
         mkey = self.batch_mkey_combo.currentText().strip()
         lo, hi, prod_lo, prod_hi = self._limits.get(mkey, (None, None, None, None))
 
         try:
-            with open(csv_path, 'w', newline='', encoding='utf-8') as fh:
-                wr = csv.writer(fh)
-                wr.writerow(['Batch Folder', self._batch_dir or ''])
-                wr.writerow(['Measurement', mkey])
-                wr.writerow(['Spec Low', lo, 'Spec High', hi, 'Prod Low', prod_lo, 'Prod High', prod_hi])
-                wr.writerow([])
-                wr.writerow([
-                    'Wafer File', 'Lot', 'Designs', 'Design Used', 'Sites', 'Mean', 'Median', 'Std Dev',
-                    'Pass', 'Fail', 'Yield', 'Center Mean', 'Edge Mean', 'Edge-Center', 'Edge Fail %', 'Status'
+            from openpyxl import Workbook
+        except Exception:
+            QMessageBox.warning(
+                self,
+                'Missing dependency',
+                'Excel export requires openpyxl.\nInstall with: pip install openpyxl'
+            )
+            return
+
+        wb = Workbook()
+        ws_summary = wb.active
+        ws_summary.title = 'Summary'
+        ws_summary.append(['Batch Folder', self._batch_dir or ''])
+        ws_summary.append(['Measurement', mkey])
+        ws_summary.append(['Spec Low', lo, 'Spec High', hi, 'Prod Low', prod_lo, 'Prod High', prod_hi])
+        ws_summary.append([])
+        ws_summary.append([
+            'Wafer File', 'Lot', 'Designs', 'Design Used', 'Sites', 'Mean', 'Median', 'Std Dev',
+            'Pass', 'Fail', 'Yield', 'Center Mean', 'Edge Mean', 'Edge-Center', 'Edge Fail %', 'Status'
+        ])
+        for r in self._batch_rows:
+            edge_delta = (r['edge_mean'] - r['center_mean']) if (r['edge_mean'] is not None and r['center_mean'] is not None) else None
+            ws_summary.append([
+                r['rec']['name'], r['rec']['header'].get('LOT', '—'), r['designs'], r['design_used'], r['sites'],
+                r['mean'], r['median'], r['std'], r['pass'], r['fail'], r['yield'],
+                si_fmt(r['center_mean']) if r['center_mean'] is not None else 'N/A',
+                si_fmt(r['edge_mean']) if r['edge_mean'] is not None else 'N/A',
+                si_fmt(edge_delta) if edge_delta is not None else 'N/A',
+                f'{r["edge_fail_pct"]:.1f}%' if r['edge_fail_pct'] is not None else 'N/A',
+                r['status'],
+            ])
+
+        design_ids = sorted({sn for rec in self._batch_records for sn in rec.get('subs', [])})
+        modes = [('All_Designs', None)] + [(f'Design_{sn}', sn) for sn in design_ids]
+        headers = [
+            'Wafer File', 'Lot', 'Design Used', 'Sites', 'Mean', 'Median', 'Std Dev',
+            'Pass', 'Fail', 'Yield'
+        ]
+        for sheet_name, sub in modes:
+            ws = wb.create_sheet(title=sheet_name[:31])
+            ws.append(['Batch Folder', self._batch_dir or ''])
+            ws.append(['Measurement', mkey, 'Design Mode', 'All' if sub is None else str(sub)])
+            ws.append([])
+            ws.append(headers)
+            for rec in self._batch_records:
+                values = {s['name']: get_site_value(s, mkey, sub) for s in rec.get('sites', [])}
+                vals = [v for v in values.values() if v is not None and math.isfinite(v)]
+                mean_v = statistics.mean(vals) if vals else None
+                med_v = statistics.median(vals) if vals else None
+                std_v = statistics.pstdev(vals) if vals else None
+                passed = 0
+                for v in vals:
+                    in_spec = (lo is None or v >= lo) and (hi is None or v <= hi)
+                    in_prod = (prod_lo is None or v >= prod_lo) and (prod_hi is None or v <= prod_hi)
+                    if in_spec and (in_prod if self._use_prod_limits else True):
+                        passed += 1
+                fail = max(0, len(vals) - passed)
+                yld = (passed / len(vals) * 100.0) if vals else None
+                ws.append([
+                    rec['name'], rec['header'].get('LOT', '—'),
+                    ('All' if sub is None else str(sub)), len(rec.get('sites', [])),
+                    si_fmt(mean_v) if mean_v is not None else 'N/A',
+                    si_fmt(med_v) if med_v is not None else 'N/A',
+                    si_fmt(std_v) if std_v is not None else 'N/A',
+                    passed, fail, (f'{yld:.1f}%' if yld is not None else 'N/A')
                 ])
-                for r in self._batch_rows:
-                    edge_delta = (r['edge_mean'] - r['center_mean']) if (r['edge_mean'] is not None and r['center_mean'] is not None) else None
-                    wr.writerow([
-                        r['rec']['name'], r['rec']['header'].get('LOT', '—'), r['designs'], r['design_used'], r['sites'],
-                        r['mean'], r['median'], r['std'], r['pass'], r['fail'], r['yield'],
-                        si_fmt(r['center_mean']) if r['center_mean'] is not None else 'N/A',
-                        si_fmt(r['edge_mean']) if r['edge_mean'] is not None else 'N/A',
-                        si_fmt(edge_delta) if edge_delta is not None else 'N/A',
-                        f'{r["edge_fail_pct"]:.1f}%' if r['edge_fail_pct'] is not None else 'N/A',
-                        r['status'],
-                    ])
-        except OSError as e:
-            QMessageBox.critical(self, 'Export Error', f'Failed to write CSV file:\n{e}')
-            return
-        self.status.showMessage(f'  Exported batch CSV  ·  {csv_path}')
 
-    def _export_batch_pdf(self):
-        if not self._batch_rows:
-            QMessageBox.information(self, 'No batch data', 'Load a batch folder first.')
-            return
-        default_name = 'batch_report.pdf'
-        if self._batch_dir:
-            default_name = f'{os.path.basename(self._batch_dir)}_batch_report.pdf'
-        pdf_path, _ = QFileDialog.getSaveFileName(
-            self, 'Export Batch PDF Summary', default_name, 'PDF Files (*.pdf)'
-        )
-        if not pdf_path:
-            return
-        if not pdf_path.lower().endswith('.pdf'):
-            pdf_path += '.pdf'
-
-        mkey = self.batch_mkey_combo.currentText().strip()
-        lo, hi, prod_lo, prod_hi = self._limits.get(mkey, (None, None, None, None))
         try:
-            pdf = QPdfWriter(pdf_path)
-            pdf.setPageSize(QPageSize(QPageSize.A4))
-            pdf.setResolution(120)
-            p = QPainter(pdf)
-            y = 70
-            lh = 24
-            p.setFont(QFont('Segoe UI', 12, QFont.Bold))
-            p.drawText(60, y, 'Wafer Batch Report')
-            y += lh
-            p.setFont(QFont('Segoe UI', 10))
-            p.drawText(60, y, f'Folder: {self._batch_dir or "—"}')
-            y += lh
-            p.drawText(60, y, f'Measurement: {mkey}')
-            y += lh
-            p.drawText(60, y, f'Spec limits: {lo} to {hi}   ·   Prod limits: {prod_lo} to {prod_hi}')
-            y += lh * 2
-
-            top = sorted(self._batch_rows, key=lambda r: r['yield_num'])[:3]
-            p.setFont(QFont('Segoe UI', 10, QFont.Bold))
-            p.drawText(60, y, 'Worst wafers (yield):')
-            y += lh
-            p.setFont(QFont('Segoe UI', 9))
-            for r in top:
-                p.drawText(70, y, f'{r["rec"]["name"]}: Yield {r["yield"]}  Pass/Fail {r["pass"]}/{r["fail"]}')
-                y += lh
-            y += 10
-
-            x = 60
-            card_w = 240
-            for r in top:
-                img = self._render_wafer_snapshot(r['rec'], mkey, size=220)
-                p.drawText(x, y, r['rec']['name'])
-                p.drawImage(QRect(x, y + 6, card_w, card_w), img)
-                x += card_w + 20
-            p.end()
+            wb.save(out_path)
         except Exception as e:
-            QMessageBox.critical(self, 'Export Error', f'Failed to write PDF file:\n{e}')
+            QMessageBox.critical(self, 'Export Error', f'Failed to write report:\n{e}')
             return
-        self.status.showMessage(f'  Exported batch PDF  ·  {pdf_path}')
+        self.status.showMessage(f'  Exported batch report  ·  {out_path}')
 
     # ── export ────────────────────────────────────────────────────────────────
 
@@ -2509,8 +2478,7 @@ class MainWindow(QMainWindow):
         self.batch_design_mode_combo.setEnabled(True)
         self.batch_sort_combo.setEnabled(True)
         self.batch_compare_btn.setEnabled(True)
-        self.batch_export_csv_btn.setEnabled(True)
-        self.batch_export_pdf_btn.setEnabled(True)
+        self.batch_export_report_btn.setEnabled(True)
         self.batch_golden_combo.setEnabled(True)
         self.batch_low_edit.setEnabled(True)
         self.batch_high_edit.setEnabled(True)
