@@ -7,7 +7,7 @@ Requirements:  pip install PySide6
 Usage:         python wafer_mapper_light.py [file.kdf]
 """
 
-import sys, os, re, math, statistics
+import sys, os, re, math, statistics, csv
 from collections import defaultdict
 
 from PySide6.QtWidgets import (
@@ -23,7 +23,7 @@ from PySide6.QtCore import Qt, QRectF, QPointF, QPoint, Signal, QSize, QRect
 from PySide6.QtGui import (
     QPainter, QColor, QBrush, QPen, QFont,
     QLinearGradient, QRadialGradient, QPixmap, QIcon, QAction,
-    QPolygonF, QImage, QImageWriter
+    QPolygonF, QImage, QImageWriter, QPdfWriter, QPageSize
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1056,6 +1056,7 @@ class MainWindow(QMainWindow):
         self._use_prod_limits: bool    = False
         self._batch_records: list[dict] = []
         self._batch_dir: str | None = None
+        self._batch_rows: list[dict] = []
 
         self._build_ui()
         self._update_ui_state()
@@ -1273,23 +1274,28 @@ class MainWindow(QMainWindow):
         self.batch_scroll.setWidget(batch_content)
         btv = QVBoxLayout(batch_content); btv.setContentsMargins(8, 8, 8, 8); btv.setSpacing(8)
 
-        bh = QHBoxLayout()
+        controls = QGroupBox('Batch Controls')
+        ch = QHBoxLayout(controls); ch.setSpacing(8)
+        self.batch_load_btn = QPushButton('Load Batch Folder…')
+        self.batch_load_btn.setObjectName('primary')
+        self.batch_load_btn.clicked.connect(self.open_batch_folder)
+        ch.addWidget(self.batch_load_btn)
         self.batch_mkey_combo = ArrowComboBox()
         self.batch_mkey_combo.setMinimumHeight(34)
         self.batch_mkey_combo.currentTextChanged.connect(self._update_batch_table)
-        bh.addWidget(self.batch_mkey_combo, stretch=1)
+        ch.addWidget(self.batch_mkey_combo, stretch=1)
         self.batch_sort_combo = ArrowComboBox()
         self.batch_sort_combo.setMinimumHeight(34)
         self.batch_sort_combo.addItems(['Yield (high to low)', 'Yield (low to high)', 'Wafer name'])
         self.batch_sort_combo.currentTextChanged.connect(self._update_batch_table)
-        bh.addWidget(self.batch_sort_combo)
+        ch.addWidget(self.batch_sort_combo)
         self.batch_compare_btn = QPushButton('Compare Selected')
         self.batch_compare_btn.clicked.connect(self._compare_selected_wafers)
-        bh.addWidget(self.batch_compare_btn)
-        self.batch_load_btn = QPushButton('Load Batch Folder…')
-        self.batch_load_btn.clicked.connect(self.open_batch_folder)
-        bh.addWidget(self.batch_load_btn)
-        btv.addLayout(bh)
+        ch.addWidget(self.batch_compare_btn)
+        self.batch_export_btn = QPushButton('Export Batch Report…')
+        self.batch_export_btn.clicked.connect(self._export_batch_report)
+        ch.addWidget(self.batch_export_btn)
+        btv.addWidget(controls)
 
         self.batch_progress = QProgressBar()
         self.batch_progress.setMinimum(0)
@@ -1316,12 +1322,62 @@ class MainWindow(QMainWindow):
         self.batch_table.setSelectionMode(QTableWidget.ExtendedSelection)
         self.batch_table.verticalHeader().setVisible(False)
         self.batch_table.setShowGrid(False)
-        # Keep the table compact; comparison canvases are the primary analysis area.
-        self.batch_table.setMinimumHeight(170)
-        self.batch_table.setMaximumHeight(230)
+        self.batch_table.setMinimumHeight(180)
+        self.batch_table.setMaximumHeight(260)
         self.batch_table.itemDoubleClicked.connect(self._open_batch_selected_wafer)
         self.batch_table.itemSelectionChanged.connect(self._compare_selected_wafers)
         btv.addWidget(self.batch_table)
+
+        trend_box = QGroupBox('Trend By Wafer Order')
+        tv = QVBoxLayout(trend_box); tv.setContentsMargins(8, 8, 8, 8)
+        self.batch_trend_summary = QLabel('Shows drift in yield/mean/std by wafer sequence.')
+        self.batch_trend_summary.setWordWrap(True)
+        self.batch_trend_summary.setStyleSheet(f'color:{T["text_secondary"]};font-size:12px;')
+        tv.addWidget(self.batch_trend_summary)
+        self.batch_trend_table = QTableWidget(0, 5)
+        self.batch_trend_table.setHorizontalHeaderLabels(['Order', 'Wafer', 'Yield', 'Mean', 'Std Dev'])
+        self.batch_trend_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.batch_trend_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.batch_trend_table.verticalHeader().setVisible(False)
+        self.batch_trend_table.setMaximumHeight(220)
+        tv.addWidget(self.batch_trend_table)
+        btv.addWidget(trend_box)
+
+        radial_box = QGroupBox('Within-Wafer Radial Analysis')
+        rvb = QVBoxLayout(radial_box); rvb.setContentsMargins(8, 8, 8, 8)
+        self.batch_radial_summary = QLabel('Center vs edge ring analysis for process non-uniformity.')
+        self.batch_radial_summary.setWordWrap(True)
+        self.batch_radial_summary.setStyleSheet(f'color:{T["text_secondary"]};font-size:12px;')
+        rvb.addWidget(self.batch_radial_summary)
+        self.batch_radial_table = QTableWidget(0, 5)
+        self.batch_radial_table.setHorizontalHeaderLabels(['Wafer', 'Center Mean', 'Edge Mean', 'Edge-Center', 'Edge Fail %'])
+        self.batch_radial_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.batch_radial_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.batch_radial_table.verticalHeader().setVisible(False)
+        self.batch_radial_table.setMaximumHeight(220)
+        rvb.addWidget(self.batch_radial_table)
+        btv.addWidget(radial_box)
+
+        golden_box = QGroupBox('Golden Wafer Scoring')
+        gv = QVBoxLayout(golden_box); gv.setContentsMargins(8, 8, 8, 8)
+        gh = QHBoxLayout()
+        self.batch_golden_combo = ArrowComboBox()
+        self.batch_golden_combo.currentTextChanged.connect(self._update_golden_table)
+        gh.addWidget(QLabel('Golden wafer:'))
+        gh.addWidget(self.batch_golden_combo, stretch=1)
+        gv.addLayout(gh)
+        self.batch_golden_summary = QLabel('Score each wafer against a golden reference profile.')
+        self.batch_golden_summary.setWordWrap(True)
+        self.batch_golden_summary.setStyleSheet(f'color:{T["text_secondary"]};font-size:12px;')
+        gv.addWidget(self.batch_golden_summary)
+        self.batch_golden_table = QTableWidget(0, 4)
+        self.batch_golden_table.setHorizontalHeaderLabels(['Wafer', 'Match Score', 'Common Dies', 'Avg |Δ|'])
+        self.batch_golden_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.batch_golden_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.batch_golden_table.verticalHeader().setVisible(False)
+        self.batch_golden_table.setMaximumHeight(220)
+        gv.addWidget(self.batch_golden_table)
+        btv.addWidget(golden_box)
 
         self.batch_compare_summary = QLabel('Select two or more wafers to compare.')
         self.batch_compare_summary.setWordWrap(True)
@@ -1701,6 +1757,17 @@ class MainWindow(QMainWindow):
             values[s['name']] = get_site_value(s, mkey, design)
         return design, values
 
+    def _linear_slope(self, ys: list[float]) -> float:
+        n = len(ys)
+        if n < 2:
+            return 0.0
+        xs = list(range(n))
+        mx = statistics.mean(xs)
+        my = statistics.mean(ys)
+        num = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+        den = sum((x - mx) ** 2 for x in xs)
+        return (num / den) if den else 0.0
+
     def _update_batch_table(self, *_args):
         if not hasattr(self, 'batch_table'):
             return
@@ -1708,6 +1775,7 @@ class MainWindow(QMainWindow):
             self.batch_table.setRowCount(0)
             self.batch_compare_summary.setText('Select two or more wafers to compare.')
             self._clear_compare_cards()
+            self._batch_rows = []
             return
 
         mkey = self.batch_mkey_combo.currentText().strip()
@@ -1718,6 +1786,7 @@ class MainWindow(QMainWindow):
             )
             self.batch_compare_summary.setText('Select two or more wafers to compare.')
             self._clear_compare_cards()
+            self._batch_rows = []
             return
 
         lo, hi, prod_lo, prod_hi = self._limits.get(mkey, (None, None, None, None))
@@ -1764,6 +1833,36 @@ class MainWindow(QMainWindow):
             if not vals:
                 status = 'No data'
 
+            # radial split: center vs edge
+            center_vals = []
+            edge_vals = []
+            edge_total = 0
+            edge_fail = 0
+            xs = [s['x'] for s in rec.get('sites', [])]
+            ys = [s['y'] for s in rec.get('sites', [])]
+            cx = statistics.mean(xs) if xs else 0.0
+            cy = statistics.mean(ys) if ys else 0.0
+            max_r = max((math.hypot(s['x'] - cx, s['y'] - cy) for s in rec.get('sites', [])), default=1.0)
+            for s in rec.get('sites', []):
+                v = values.get(s['name'])
+                if v is None or not math.isfinite(v):
+                    continue
+                r = math.hypot(s['x'] - cx, s['y'] - cy) / max_r if max_r > 0 else 0.0
+                if r <= 0.5:
+                    center_vals.append(v)
+                else:
+                    edge_vals.append(v)
+                    edge_total += 1
+                    in_spec = (lo is None or v >= lo) and (hi is None or v <= hi)
+                    in_prod = (prod_lo is None or v >= prod_lo) and (prod_hi is None or v <= prod_hi)
+                    passed_v = in_spec and (in_prod if use_prod else True)
+                    if not passed_v:
+                        edge_fail += 1
+
+            center_mean = statistics.mean(center_vals) if center_vals else None
+            edge_mean = statistics.mean(edge_vals) if edge_vals else None
+            edge_fail_pct = (edge_fail / edge_total * 100.0) if edge_total else None
+
             rows.append({
                 'rec': rec,
                 'designs': len(rec.get('subs', [])),
@@ -1776,6 +1875,11 @@ class MainWindow(QMainWindow):
                 'yield': (f'{yld:.1f}%' if yld is not None else 'N/A'),
                 'status': status,
                 'yield_num': (-1.0 if yld is None else yld),
+                'mean_num': mean_v,
+                'std_num': std_v,
+                'center_mean': center_mean,
+                'edge_mean': edge_mean,
+                'edge_fail_pct': edge_fail_pct,
             })
 
         sort_mode = self.batch_sort_combo.currentText() if hasattr(self, 'batch_sort_combo') else 'Yield (high to low)'
@@ -1827,7 +1931,139 @@ class MainWindow(QMainWindow):
             f'Overall pass: {total_pass}/{total_valid}  ·  Overall yield: {overall:.1f}%\n'
             f'Tip: double-click a wafer row to open it in the wafer map view.'
         )
+        self._batch_rows = rows
+        self._update_trend_panel(rows)
+        self._update_radial_panel(rows)
+        self._sync_golden_combo(rows)
+        self._update_golden_table()
         self._compare_selected_wafers()
+
+    def _update_trend_panel(self, rows: list[dict]):
+        ordered = sorted(rows, key=lambda r: r['rec']['name'].lower())
+        self.batch_trend_table.setRowCount(len(ordered))
+        ys = []
+        means = []
+        stds = []
+        for i, row in enumerate(ordered):
+            yv = row['yield_num']
+            if yv >= 0:
+                ys.append(yv)
+            if row['mean_num'] is not None:
+                means.append(row['mean_num'])
+            if row['std_num'] is not None:
+                stds.append(row['std_num'])
+            vals = [str(i + 1), row['rec']['name'], row['yield'], row['mean'], row['std']]
+            for col, txt in enumerate(vals):
+                self.batch_trend_table.setItem(i, col, QTableWidgetItem(txt))
+
+        y_slope = self._linear_slope(ys) if ys else 0.0
+        drift = 'stable'
+        if y_slope > 0.2:
+            drift = 'improving'
+        elif y_slope < -0.2:
+            drift = 'degrading'
+        mean_txt = si_fmt(statistics.mean(means)) if means else 'N/A'
+        std_txt = si_fmt(statistics.mean(stds)) if stds else 'N/A'
+        self.batch_trend_summary.setText(
+            f'Wafer order trend: {drift}  ·  Yield slope: {y_slope:.3f} per wafer  ·  '
+            f'Batch mean(avg): {mean_txt}  ·  Batch std(avg): {std_txt}'
+        )
+
+    def _update_radial_panel(self, rows: list[dict]):
+        self.batch_radial_table.setRowCount(len(rows))
+        edge_higher = 0
+        comparable = 0
+        for i, row in enumerate(rows):
+            c = row['center_mean']
+            e = row['edge_mean']
+            d = (e - c) if (e is not None and c is not None) else None
+            if d is not None:
+                comparable += 1
+                if d > 0:
+                    edge_higher += 1
+            vals = [
+                row['rec']['name'],
+                si_fmt(c) if c is not None else 'N/A',
+                si_fmt(e) if e is not None else 'N/A',
+                si_fmt(d) if d is not None else 'N/A',
+                (f'{row["edge_fail_pct"]:.1f}%' if row['edge_fail_pct'] is not None else 'N/A'),
+            ]
+            for col, txt in enumerate(vals):
+                self.batch_radial_table.setItem(i, col, QTableWidgetItem(txt))
+        self.batch_radial_summary.setText(
+            f'Radial overview: comparable wafers {comparable}/{len(rows)}  ·  '
+            f'Edge>Center in {edge_higher} wafers'
+        )
+
+    def _sync_golden_combo(self, rows: list[dict]):
+        names = [r['rec']['name'] for r in rows]
+        prev = self.batch_golden_combo.currentText()
+        self.batch_golden_combo.blockSignals(True)
+        self.batch_golden_combo.clear()
+        self.batch_golden_combo.addItems(names)
+        self.batch_golden_combo.blockSignals(False)
+        if prev and prev in names:
+            self.batch_golden_combo.setCurrentText(prev)
+        elif names:
+            self.batch_golden_combo.setCurrentIndex(0)
+
+    def _update_golden_table(self, *_args):
+        rows = self._batch_rows or []
+        if not rows:
+            self.batch_golden_table.setRowCount(0)
+            self.batch_golden_summary.setText('Score each wafer against a golden reference profile.')
+            return
+        gname = self.batch_golden_combo.currentText().strip()
+        golden_row = next((r for r in rows if r['rec']['name'] == gname), None)
+        if not golden_row:
+            self.batch_golden_table.setRowCount(0)
+            return
+        mkey = self.batch_mkey_combo.currentText().strip()
+        g_design = None if golden_row['design_used'] == '—' else int(golden_row['design_used'])
+        g_values = {
+            s['name']: get_site_value(s, mkey, g_design)
+            for s in golden_row['rec'].get('sites', [])
+        }
+        scores = []
+        for row in rows:
+            design = None if row['design_used'] == '—' else int(row['design_used'])
+            vals = {
+                s['name']: get_site_value(s, mkey, design)
+                for s in row['rec'].get('sites', [])
+            }
+            diffs = []
+            for name, gv in g_values.items():
+                vv = vals.get(name)
+                if gv is None or vv is None:
+                    continue
+                diffs.append(abs(vv - gv))
+            common = len(diffs)
+            if common:
+                avg_abs = statistics.mean(diffs)
+                gstd = statistics.pstdev([v for v in g_values.values() if v is not None]) or 1.0
+                nr = avg_abs / gstd
+                score = max(0.0, min(100.0, 100.0 - nr * 25.0))
+            else:
+                avg_abs = None
+                score = 0.0
+            scores.append((row['rec']['name'], score, common, avg_abs))
+        scores.sort(key=lambda x: x[1], reverse=True)
+        self.batch_golden_table.setRowCount(len(scores))
+        for i, (name, score, common, avg_abs) in enumerate(scores):
+            vals = [name, f'{score:.1f}', str(common), si_fmt(avg_abs) if avg_abs is not None else 'N/A']
+            for col, txt in enumerate(vals):
+                it = QTableWidgetItem(txt)
+                if col == 1:
+                    if score >= 85:
+                        it.setForeground(QColor(T['pass_fg']))
+                    elif score < 60:
+                        it.setForeground(QColor(T['fail_fg']))
+                    else:
+                        it.setForeground(QColor(T['warn']))
+                self.batch_golden_table.setItem(i, col, it)
+        self.batch_golden_summary.setText(
+            f'Golden wafer: {gname}  ·  Scores are based on average absolute delta normalized to golden sigma.'
+        )
 
     def _compare_selected_wafers(self):
         if not hasattr(self, 'batch_table'):
@@ -1944,6 +2180,111 @@ class MainWindow(QMainWindow):
             return
         self._load_kdf(path)
 
+    def _render_wafer_snapshot(self, rec: dict, mkey: str, size: int = 260) -> QImage:
+        design = self._batch_design_for_record(rec)
+        lo, hi, prod_lo, prod_hi = self._limits.get(mkey, (None, None, None, None))
+        use_prod = self._use_prod_limits and (prod_lo is not None or prod_hi is not None)
+        values = {s['name']: get_site_value(s, mkey, design) for s in rec.get('sites', [])}
+        canvas = WaferCanvas()
+        canvas.resize(size, size)
+        canvas.load(
+            rec.get('sites', []), values, lo, hi, mkey=mkey,
+            prod_lo=prod_lo, prod_hi=prod_hi, show_prod=use_prod
+        )
+        img = QImage(size, size, QImage.Format_ARGB32_Premultiplied)
+        img.fill(Qt.white)
+        p = QPainter(img)
+        canvas.render(p, QPoint(0, 0))
+        p.end()
+        return img
+
+    def _export_batch_report(self):
+        if not self._batch_rows:
+            QMessageBox.information(self, 'No batch data', 'Load a batch folder first.')
+            return
+        default_name = 'batch_report.csv'
+        if self._batch_dir:
+            default_name = f'{os.path.basename(self._batch_dir)}_batch_report.csv'
+        csv_path, _ = QFileDialog.getSaveFileName(
+            self, 'Export Batch Report (CSV + PDF)', default_name, 'CSV Files (*.csv)'
+        )
+        if not csv_path:
+            return
+        if not csv_path.lower().endswith('.csv'):
+            csv_path += '.csv'
+        pdf_path = os.path.splitext(csv_path)[0] + '.pdf'
+
+        mkey = self.batch_mkey_combo.currentText().strip()
+        lo, hi, prod_lo, prod_hi = self._limits.get(mkey, (None, None, None, None))
+
+        try:
+            with open(csv_path, 'w', newline='', encoding='utf-8') as fh:
+                wr = csv.writer(fh)
+                wr.writerow(['Batch Folder', self._batch_dir or ''])
+                wr.writerow(['Measurement', mkey])
+                wr.writerow(['Spec Low', lo, 'Spec High', hi, 'Prod Low', prod_lo, 'Prod High', prod_hi])
+                wr.writerow([])
+                wr.writerow([
+                    'Wafer File', 'Lot', 'Designs', 'Design Used', 'Sites', 'Mean', 'Std Dev',
+                    'Pass', 'Fail', 'Yield', 'Center Mean', 'Edge Mean', 'Edge-Center', 'Edge Fail %', 'Status'
+                ])
+                for r in self._batch_rows:
+                    edge_delta = (r['edge_mean'] - r['center_mean']) if (r['edge_mean'] is not None and r['center_mean'] is not None) else None
+                    wr.writerow([
+                        r['rec']['name'], r['rec']['header'].get('LOT', '—'), r['designs'], r['design_used'], r['sites'],
+                        r['mean'], r['std'], r['pass'], r['fail'], r['yield'],
+                        si_fmt(r['center_mean']) if r['center_mean'] is not None else 'N/A',
+                        si_fmt(r['edge_mean']) if r['edge_mean'] is not None else 'N/A',
+                        si_fmt(edge_delta) if edge_delta is not None else 'N/A',
+                        f'{r["edge_fail_pct"]:.1f}%' if r['edge_fail_pct'] is not None else 'N/A',
+                        r['status'],
+                    ])
+        except OSError as e:
+            QMessageBox.critical(self, 'Export Error', f'Failed to write CSV file:\n{e}')
+            return
+
+        try:
+            pdf = QPdfWriter(pdf_path)
+            pdf.setPageSize(QPageSize(QPageSize.A4))
+            pdf.setResolution(120)
+            p = QPainter(pdf)
+            y = 70
+            lh = 24
+            p.setFont(QFont('Segoe UI', 12, QFont.Bold))
+            p.drawText(60, y, 'Wafer Batch Report')
+            y += lh
+            p.setFont(QFont('Segoe UI', 10))
+            p.drawText(60, y, f'Folder: {self._batch_dir or "—"}')
+            y += lh
+            p.drawText(60, y, f'Measurement: {mkey}')
+            y += lh
+            p.drawText(60, y, f'Spec limits: {lo} to {hi}   ·   Prod limits: {prod_lo} to {prod_hi}')
+            y += lh * 2
+
+            top = sorted(self._batch_rows, key=lambda r: r['yield_num'])[:3]
+            p.setFont(QFont('Segoe UI', 10, QFont.Bold))
+            p.drawText(60, y, 'Worst wafers (yield):')
+            y += lh
+            p.setFont(QFont('Segoe UI', 9))
+            for r in top:
+                p.drawText(70, y, f'{r["rec"]["name"]}: Yield {r["yield"]}  Pass/Fail {r["pass"]}/{r["fail"]}')
+                y += lh
+            y += 10
+
+            x = 60
+            card_w = 240
+            for r in top:
+                img = self._render_wafer_snapshot(r['rec'], mkey, size=220)
+                p.drawText(x, y, r['rec']['name'])
+                p.drawImage(QRect(x, y + 6, card_w, card_w), img)
+                x += card_w + 20
+            p.end()
+        except Exception as e:
+            QMessageBox.critical(self, 'Export Error', f'CSV exported but PDF failed:\n{e}')
+            return
+
+        self.status.showMessage(f'  Exported batch report  ·  {csv_path}  ·  {pdf_path}')
+
     # ── export ────────────────────────────────────────────────────────────────
 
     def export_map(self):
@@ -2021,6 +2362,8 @@ class MainWindow(QMainWindow):
         self.batch_mkey_combo.setEnabled(has_batch)
         self.batch_sort_combo.setEnabled(has_batch)
         self.batch_compare_btn.setEnabled(has_batch)
+        self.batch_export_btn.setEnabled(has_batch)
+        self.batch_golden_combo.setEnabled(has_batch)
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  ENTRY POINT
