@@ -1075,9 +1075,19 @@ class MainWindow(QMainWindow):
         tb.addAction(open_act)
         tb.addSeparator()
 
+        reset_act = QAction('  Reset', self)
+        reset_act.triggered.connect(self.reset_all)
+        tb.addAction(reset_act)
+        tb.addSeparator()
+
         exp_act = QAction('  Export Map…', self)
         exp_act.triggered.connect(self.export_map)
         tb.addAction(exp_act)
+        tb.addSeparator()
+
+        exp_xlsx_act = QAction('  Export Excel Map…', self)
+        exp_xlsx_act.triggered.connect(self.export_map_excel)
+        tb.addAction(exp_xlsx_act)
         tb.addSeparator()
 
         zoom_out = QAction('  −', self)
@@ -1155,6 +1165,10 @@ class MainWindow(QMainWindow):
         self.left_batch_btn.setMinimumHeight(34)
         self.left_batch_btn.clicked.connect(self.open_batch_folder)
         lv.addWidget(self.left_batch_btn)
+
+        self.left_reset_btn = QPushButton('Reset All')
+        self.left_reset_btn.clicked.connect(self.reset_all)
+        lv.addWidget(self.left_reset_btn)
 
         # design selector — uses ArrowComboBox
         db = QGroupBox('Design')
@@ -1475,6 +1489,79 @@ class MainWindow(QMainWindow):
             return
         self._load_batch_folder(folder)
 
+    def reset_all(self):
+        ans = QMessageBox.question(
+            self,
+            'Reset Everything',
+            'Are you sure you want to clear all loaded wafer and batch data?',
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        if ans != QMessageBox.Yes:
+            return
+
+        self._header = {}
+        self._sites = []
+        self._mkeys = []
+        self._limits = {}
+        self._current_mkey = None
+        self._filepath = None
+        self._all_subsites = []
+        self._current_sub = None
+        self._batch_records = []
+        self._batch_rows = []
+        self._batch_dir = None
+        self._use_prod_limits = False
+
+        self.lbl_file.setText('No file loaded  ')
+        self.lbl_lot.setText('—')
+        self.lbl_sys.setText('—')
+        self.lbl_stt.setText('—')
+        self.lbl_cnt.setText('—')
+        self.lbl_tests.setText('—')
+        self.lbl_dsn.setText('—')
+        self.setWindowTitle('Wafer Map Viewer')
+
+        self.design_combo.blockSignals(True)
+        self.design_combo.clear()
+        self.design_combo.blockSignals(False)
+        self.mkey_combo.blockSignals(True)
+        self.mkey_combo.clear()
+        self.mkey_combo.blockSignals(False)
+        self.low_edit.clear()
+        self.high_edit.clear()
+        self.prod_toggle.setChecked(False)
+        self.prod_low_edit.clear()
+        self.prod_high_edit.clear()
+
+        self.batch_mkey_combo.blockSignals(True)
+        self.batch_mkey_combo.clear()
+        self.batch_mkey_combo.blockSignals(False)
+        self.batch_design_mode_combo.blockSignals(True)
+        self.batch_design_mode_combo.clear()
+        self.batch_design_mode_combo.addItem('All designs (aggregate)', None)
+        self.batch_design_mode_combo.blockSignals(False)
+        self.batch_golden_combo.blockSignals(True)
+        self.batch_golden_combo.clear()
+        self.batch_golden_combo.blockSignals(False)
+        self.batch_low_edit.clear()
+        self.batch_high_edit.clear()
+        self.batch_prod_toggle.setChecked(False)
+        self.batch_prod_low_edit.clear()
+        self.batch_prod_high_edit.clear()
+        self.batch_table.setRowCount(0)
+        self.batch_radial_table.setRowCount(0)
+        self.batch_golden_table.setRowCount(0)
+        self.batch_compare_summary.setText('Select two or more wafers to compare.')
+        self.batch_summary.setText('Open a folder with KDF files to analyze a batch.')
+        self.batch_radial_summary.setText('Center vs edge ring analysis for process non-uniformity.')
+        self.batch_golden_summary.setText('Score each wafer against a golden reference profile.')
+        self._clear_compare_cards()
+        self.canvas.load([], {}, None, None, mkey='')
+
+        self._update_ui_state()
+        self.status.showMessage('  Reset complete')
+
     def _set_active_batch_tab(self):
         if hasattr(self, 'main_tabs'):
             idx = self.main_tabs.indexOf(self.batch_tab)
@@ -1565,6 +1652,10 @@ class MainWindow(QMainWindow):
         self.batch_design_mode_combo.addItem('All designs (aggregate)', None)
         for sn in batch_subs:
             self.batch_design_mode_combo.addItem(f'Design {sn}', sn)
+        if batch_subs:
+            idx = self.batch_design_mode_combo.findData(batch_subs[0])
+            if idx >= 0:
+                self.batch_design_mode_combo.setCurrentIndex(idx)
         self.batch_design_mode_combo.blockSignals(False)
         if mkeys:
             if self._current_mkey and self._current_mkey in mkeys:
@@ -2303,6 +2394,122 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, 'File Missing', 'Selected wafer file is no longer available.')
             return
         self._load_kdf(path)
+
+    def _die_fill_hex(self, v, lo, hi, prod_lo, prod_hi, use_prod):
+        if v is None or not math.isfinite(v):
+            return T['nodata_bg']
+        limits_active = (lo is not None or hi is not None)
+        if not limits_active:
+            return T['neutral_bg']
+        in_spec = (lo is None or v >= lo) and (hi is None or v <= hi)
+        if not in_spec:
+            return T['fail_bg']
+        if use_prod:
+            in_prod = (prod_lo is None or v >= prod_lo) and (prod_hi is None or v <= prod_hi)
+            if not in_prod:
+                return T['warn_bg']
+        return T['pass_bg']
+
+    def export_map_excel(self):
+        if not self._sites:
+            QMessageBox.information(self, 'Nothing to export', 'Load a KDF file first.')
+            return
+        if not self._current_mkey:
+            QMessageBox.information(self, 'No measurement', 'Select a measurement first.')
+            return
+        try:
+            from openpyxl import Workbook
+            from openpyxl.styles import PatternFill, Alignment, Border, Side, Font
+            from openpyxl.utils import get_column_letter
+        except Exception:
+            QMessageBox.warning(
+                self,
+                'Missing dependency',
+                'Excel export requires openpyxl.\nInstall with: pip install openpyxl'
+            )
+            return
+
+        default_name = 'wafer_map.xlsx'
+        if self._filepath:
+            base = os.path.splitext(os.path.basename(self._filepath))[0]
+            default_name = f'{base}_{self._current_mkey.replace("@", "_")}.xlsx'
+        out_path, _ = QFileDialog.getSaveFileName(
+            self, 'Export Wafer Map (Excel)', default_name, 'Excel Workbook (*.xlsx)'
+        )
+        if not out_path:
+            return
+        if not out_path.lower().endswith('.xlsx'):
+            out_path += '.xlsx'
+
+        mkey = self._current_mkey
+        lo, hi, prod_lo, prod_hi = self._limits.get(mkey, (None, None, None, None))
+        use_prod = self._use_prod_limits and (prod_lo is not None or prod_hi is not None)
+        subs = self._all_subsites or [None]
+        xs = [s['x'] for s in self._sites]
+        ys = [s['y'] for s in self._sites]
+        x0, x1 = min(xs), max(xs)
+        y0, y1 = min(ys), max(ys)
+
+        wb = Workbook()
+        wb.remove(wb.active)
+        thin = Side(style='thin', color='8899AA')
+        border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+        for sub in subs:
+            title = f'Design_{sub}' if sub is not None else 'Design_All'
+            ws = wb.create_sheet(title=title[:31])
+            ws['A1'] = 'Measurement'
+            ws['B1'] = mkey
+            ws['A2'] = 'Spec Limits'
+            ws['B2'] = f'{lo if lo is not None else "—"} to {hi if hi is not None else "—"}'
+            ws['A3'] = 'Prod Limits'
+            ws['B3'] = (f'{prod_lo if prod_lo is not None else "—"} to {prod_hi if prod_hi is not None else "—"}'
+                        if use_prod else 'off')
+            ws['A4'] = 'Legend'
+            ws['B4'] = 'Pass'
+            ws['C4'] = 'Spec pass / Prod fail' if use_prod else 'Fail'
+            ws['D4'] = 'Fail'
+            ws['E4'] = 'No data'
+            ws['B4'].fill = PatternFill(fill_type='solid', fgColor=T['pass_bg'].replace('#', ''))
+            ws['C4'].fill = PatternFill(fill_type='solid', fgColor=(T['warn_bg'] if use_prod else T['neutral_bg']).replace('#', ''))
+            ws['D4'].fill = PatternFill(fill_type='solid', fgColor=T['fail_bg'].replace('#', ''))
+            ws['E4'].fill = PatternFill(fill_type='solid', fgColor=T['nodata_bg'].replace('#', ''))
+            for c in ('A1', 'A2', 'A3', 'A4'):
+                ws[c].font = Font(bold=True)
+
+            start_row = 7
+            start_col = 3
+            for x in range(x0, x1 + 1):
+                cell = ws.cell(row=start_row - 1, column=start_col + (x - x0), value=str(x))
+                cell.font = Font(bold=True)
+                cell.alignment = Alignment(horizontal='center')
+            for y in range(y0, y1 + 1):
+                row = start_row + (y1 - y)
+                cell = ws.cell(row=row, column=start_col - 1, value=str(y))
+                cell.font = Font(bold=True)
+                cell.alignment = Alignment(horizontal='center')
+
+            for s in self._sites:
+                v = get_site_value(s, mkey, sub)
+                row = start_row + (y1 - s['y'])
+                col = start_col + (s['x'] - x0)
+                cc = ws.cell(row=row, column=col, value=si_fmt(v) if v is not None else 'N/A')
+                hex_fill = self._die_fill_hex(v, lo, hi, prod_lo, prod_hi, use_prod).replace('#', '')
+                cc.fill = PatternFill(fill_type='solid', fgColor=hex_fill)
+                cc.border = border
+                cc.alignment = Alignment(horizontal='center', vertical='center')
+
+            for c in range(start_col, start_col + (x1 - x0 + 1)):
+                ws.column_dimensions[get_column_letter(c)].width = 11
+            for r in range(start_row, start_row + (y1 - y0 + 1)):
+                ws.row_dimensions[r].height = 22
+
+        try:
+            wb.save(out_path)
+        except Exception as e:
+            QMessageBox.critical(self, 'Export Error', f'Failed to save Excel file:\n{e}')
+            return
+        self.status.showMessage(f'  Exported wafer Excel map  ·  {out_path}')
 
     def _export_batch_report(self):
         if not self._batch_rows:
