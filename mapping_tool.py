@@ -1224,27 +1224,6 @@ class HistogramPanel(QWidget):
                    Qt.AlignCenter, 'Count')
         p.restore()
 
-        legend_items = [('Bell curve', T['accent_dark'], Qt.SolidLine)]
-        for label, mark, col, style in markers:
-            if mark is not None:
-                legend_items.append((label, col, style))
-        if legend_items:
-            legend_x = chart.left() + 6
-            legend_y = chart.top() + 6
-            legend_w = min(chart.width() - 12, 170)
-            legend_h = 18 + 16 * len(legend_items)
-            p.setBrush(QColor(255, 250, 242, 220))
-            p.setPen(QPen(QColor(T['border']), 1))
-            p.drawRoundedRect(QRectF(legend_x - 4, legend_y - 4, legend_w, legend_h), 6, 6)
-            p.setFont(QFont('Segoe UI', 8))
-            for idx, (label, col, style) in enumerate(legend_items):
-                y = legend_y + idx * 16 + 6
-                p.setPen(QPen(QColor(col), 1.8, style))
-                p.drawLine(QPointF(legend_x + 4, y), QPointF(legend_x + 22, y))
-                p.setPen(QColor(T['text_primary']))
-                p.drawText(QRectF(legend_x + 28, y - 8, legend_w - 34, 16), Qt.AlignVCenter, label)
-
-
 class YieldDonutPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1252,6 +1231,7 @@ class YieldDonutPanel(QWidget):
         self.summary = QLabel('Quick visual summary of pass and fail counts.')
         self.summary.setWordWrap(True)
         self.summary.setStyleSheet(f'color:{T["text_secondary"]};font-size:12px;')
+        self.summary.setVisible(False)
         lo.addWidget(self.summary)
         self._pass = 0
         self._fail = 0
@@ -1262,15 +1242,6 @@ class YieldDonutPanel(QWidget):
         self._pass = max(0, int(passed))
         self._fail = max(0, int(failed))
         self._warn = max(0, int(warned))
-        total = self._pass + self._fail
-        if total <= 0:
-            self.summary.setText('No yield data available for current selection.')
-        else:
-            yield_pct = (self._pass / total) * 100.0
-            self.summary.setText(
-                f'Yield {yield_pct:.1f}%  ·  pass {self._pass}  ·  fail {self._fail}'
-                + (f'  ·  near-limit {self._warn}' if self._warn > 0 else '')
-            )
         self.update()
 
     def paintEvent(self, _event):
@@ -1302,6 +1273,10 @@ class YieldDonutPanel(QWidget):
         p.drawPie(outer, start + pass_span, fail_span)
         p.setBrush(QColor(T['bg_panel']))
         p.drawEllipse(outer.adjusted(inner_margin, inner_margin, -inner_margin, -inner_margin))
+
+        p.setPen(QColor(T['text_primary']))
+        p.setFont(QFont('Segoe UI', 16, QFont.Bold))
+        p.drawText(outer, Qt.AlignCenter, f'{(self._pass / total) * 100.0:.0f}%')
 
         legend_x = outer.right() + 14
         legend_y = outer.top() + 18
@@ -1443,11 +1418,11 @@ class YieldTrendPanel(QWidget):
         p.setPen(QPen(QColor(T['border']), 1))
         p.drawRect(chart)
 
-        # Axis names (requested for the lot trend view).
+        # Axis names for the lot trend view.
         p.setPen(QColor(T['text_secondary']))
         p.setFont(QFont('Segoe UI', 9))
         p.drawText(QRectF(chart.left(), chart.bottom() + 6, chart.width(), 16),
-                   Qt.AlignCenter, 'Lot')
+                   Qt.AlignCenter, 'Wafer sequence')
         p.save()
         p.translate(chart.left() - 26, chart.top() + chart.height() / 2)
         p.rotate(-90)
@@ -2224,11 +2199,12 @@ class MainWindow(QMainWindow):
 
     def _update_batch_trend(self, rows: list[dict]):
         pts = []
-        for row in rows:
+        ordered_rows = sorted(rows, key=lambda row: row.get('rec', {}).get('load_index', 0))
+        for idx, row in enumerate(ordered_rows, start=1):
             y = row.get('yield_num', -1.0)
             if y is None or y < 0:
                 continue
-            pts.append((row['rec']['name'], float(y)))
+            pts.append((f'Wafer {idx}', float(y)))
         self.batch_trend_panel.set_data(pts)
 
     def _update_common_fail_site_map(self, rows: list[dict], mkey: str, lo, hi, use_prod: bool, prod_lo, prod_hi):
@@ -2304,6 +2280,7 @@ class MainWindow(QMainWindow):
                 self._batch_records.append({
                     'path': path,
                     'name': os.path.basename(path),
+                    'load_index': idx,
                     'header': header,
                     'sites': sites,
                     'mkeys': mkeys,
