@@ -3598,7 +3598,6 @@ def main():
     app.setStyle('Fusion')
     app.setWindowIcon(make_app_icon())
     win = MainWindow()
-    win.show()
     if len(sys.argv) > 1 and os.path.isfile(sys.argv[1]):
         win._load_kdf(sys.argv[1])
     sys.exit(app.exec())
