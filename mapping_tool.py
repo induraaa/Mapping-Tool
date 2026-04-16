@@ -1945,10 +1945,21 @@ class MainWindow(QMainWindow):
             return
         mkey = self.batch_mkey_combo.currentText().strip()
         lo, hi, prod_lo, prod_hi = self._limits.get(mkey, (None, None, None, None))
-        self.batch_low_edit.setText('' if lo is None else str(lo))
-        self.batch_high_edit.setText('' if hi is None else str(hi))
-        self.batch_prod_low_edit.setText('' if prod_lo is None else str(prod_lo))
-        self.batch_prod_high_edit.setText('' if prod_hi is None else str(prod_hi))
+
+        # Preserve whatever the user currently has in the batch limit fields.
+        # Switching measurement should not "swap" the limits to the newly
+        # selected measurement's stored values (often empty).
+        ui_has_any = any(
+            (self.batch_low_edit.text().strip(),
+             self.batch_high_edit.text().strip(),
+             self.batch_prod_low_edit.text().strip(),
+             self.batch_prod_high_edit.text().strip())
+        )
+        if not ui_has_any:
+            self.batch_low_edit.setText('' if lo is None else str(lo))
+            self.batch_high_edit.setText('' if hi is None else str(hi))
+            self.batch_prod_low_edit.setText('' if prod_lo is None else str(prod_lo))
+            self.batch_prod_high_edit.setText('' if prod_hi is None else str(prod_hi))
         self.batch_prod_toggle.blockSignals(True)
         self.batch_prod_toggle.setChecked(self._use_prod_limits)
         self.batch_prod_toggle.blockSignals(False)
@@ -2266,11 +2277,10 @@ class MainWindow(QMainWindow):
             return
 
         self._current_mkey = mkey
-        lo, hi, prod_lo, prod_hi = self._limits.get(mkey, (None, None, None, None))
-        self.low_edit.setText('' if lo is None else str(lo))
-        self.high_edit.setText('' if hi is None else str(hi))
-        self.prod_low_edit.setText('' if prod_lo is None else str(prod_lo))
-        self.prod_high_edit.setText('' if prod_hi is None else str(prod_hi))
+        # Keep the currently shown limits; only update the stored values
+        # for the newly selected measurement.
+        if not self._commit_limits_from_main_fields(self._current_mkey):
+            return
         if self.batch_mkey_combo.findText(mkey) >= 0:
             self.batch_mkey_combo.setCurrentText(mkey)
         self._sync_batch_limit_controls()
@@ -2503,7 +2513,17 @@ class MainWindow(QMainWindow):
             self.batch_fail_site_summary.setText('Select a measurement to compute fail-site heatmap.')
             return
 
-        lo, hi, prod_lo, prod_hi = self._limits.get(mkey, (None, None, None, None))
+        # Use the currently visible batch limit fields as the effective
+        # limits. This keeps the fail-site finder consistent when the
+        # measurement dropdown changes.
+        limits = self._collect_limits(
+            self.batch_low_edit.text(), self.batch_high_edit.text(),
+            self.batch_prod_low_edit.text(), self.batch_prod_high_edit.text(),
+            'Spec Low', 'Spec High',
+        )
+        if limits is INVALID_LIMIT:
+            return
+        lo, hi, prod_lo, prod_hi = limits
         use_prod = self._use_prod_limits and (prod_lo is not None or prod_hi is not None)
 
         rows = []
