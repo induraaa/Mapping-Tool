@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QFormLayout, QStatusBar, QComboBox,
     QMessageBox, QTabWidget, QTableWidget, QTableWidgetItem,
     QHeaderView, QToolBar, QSizePolicy, QPushButton, QSpinBox, QCheckBox, QProgressBar,
-    QScrollArea,
+    QScrollArea, QPlainTextEdit, QRadioButton, QButtonGroup,
     QStyle, QStyleOptionComboBox, QStyledItemDelegate
 )
 from PySide6.QtCore import Qt, QRectF, QPointF, Signal, QSize, QRect
@@ -1542,6 +1542,7 @@ class MainWindow(QMainWindow):
         self._batch_records: list[dict] = []
         self._batch_dir: str | None = None
         self._batch_rows: list[dict] = []
+        self._raw_data_path: str | None = None
 
         self._build_ui()
         self._update_ui_state()
@@ -1801,6 +1802,51 @@ class MainWindow(QMainWindow):
         tabs.addTab(self.detail_panel, 'Die Detail')
         mh.addWidget(right)
         self.main_tabs.addTab(wafer_page, 'Wafer View')
+
+        self.raw_tab = QWidget()
+        raw_root = QHBoxLayout(self.raw_tab); raw_root.setSpacing(10); raw_root.setContentsMargins(0, 0, 0, 0)
+
+        raw_left = QWidget(); raw_left.setFixedWidth(260)
+        rlv = QVBoxLayout(raw_left); rlv.setSpacing(8); rlv.setContentsMargins(0, 0, 0, 0)
+        raw_box = QGroupBox('Raw File Selection')
+        rsv = QVBoxLayout(raw_box); rsv.setContentsMargins(8, 8, 8, 8); rsv.setSpacing(6)
+        self.raw_data_summary = QLabel('Load a wafer file or batch folder to inspect raw KDF contents.')
+        self.raw_data_summary.setWordWrap(True)
+        self.raw_data_summary.setStyleSheet(f'color:{T["text_secondary"]};font-size:12px;')
+        rsv.addWidget(self.raw_data_summary)
+        self.raw_current_radio = QRadioButton('Current wafer file')
+        self.raw_current_radio.toggled.connect(self._on_raw_selection_changed)
+        rsv.addWidget(self.raw_current_radio)
+        self.raw_batch_scroll = QScrollArea()
+        self.raw_batch_scroll.setWidgetResizable(True)
+        self.raw_batch_scroll.setFrameShape(QScrollArea.NoFrame)
+        self.raw_batch_wrap = QWidget()
+        self.raw_batch_layout = QVBoxLayout(self.raw_batch_wrap)
+        self.raw_batch_layout.setContentsMargins(0, 0, 0, 0)
+        self.raw_batch_layout.setSpacing(4)
+        self.raw_batch_layout.addStretch()
+        self.raw_batch_scroll.setWidget(self.raw_batch_wrap)
+        rsv.addWidget(self.raw_batch_scroll, stretch=1)
+        self.raw_button_group = QButtonGroup(self)
+        self.raw_button_group.setExclusive(True)
+        rlv.addWidget(raw_box, stretch=1)
+        raw_root.addWidget(raw_left)
+
+        raw_view_wrap = QWidget()
+        raw_view_wrap.setStyleSheet(
+            f'background:{T["bg_panel"]};border:1px solid {T["border"]};border-radius:12px;'
+        )
+        rvw = QVBoxLayout(raw_view_wrap); rvw.setContentsMargins(8, 8, 8, 8); rvw.setSpacing(6)
+        self.raw_data_title = QLabel('Raw file contents')
+        self.raw_data_title.setStyleSheet(f'font-weight:700;color:{T["accent_dark"]};')
+        rvw.addWidget(self.raw_data_title)
+        self.raw_data_view = QPlainTextEdit()
+        self.raw_data_view.setReadOnly(True)
+        self.raw_data_view.setLineWrapMode(QPlainTextEdit.NoWrap)
+        self.raw_data_view.setPlaceholderText('Raw KDF file contents will appear here.')
+        rvw.addWidget(self.raw_data_view, stretch=1)
+        raw_root.addWidget(raw_view_wrap, stretch=1)
+        self.main_tabs.addTab(self.raw_tab, 'Raw Data')
 
         self.batch_tab = QWidget()
         batch_outer = QVBoxLayout(self.batch_tab)
@@ -2108,6 +2154,8 @@ class MainWindow(QMainWindow):
         self.batch_trend_panel.set_data([])
         self.batch_fail_site_panel.set_data([])
         self.batch_fail_site_summary.setText('Fail frequency heatmap across wafers.')
+        self._set_raw_data_path(None)
+        self._populate_raw_selector()
 
         self._update_ui_state()
         self.status.showMessage('  Reset complete')
@@ -2121,6 +2169,86 @@ class MainWindow(QMainWindow):
     def _set_active_wafer_tab(self):
         if hasattr(self, 'main_tabs'):
             self.main_tabs.setCurrentIndex(0)
+
+    def _clear_raw_batch_buttons(self):
+        if not hasattr(self, 'raw_batch_layout'):
+            return
+        while self.raw_batch_layout.count():
+            item = self.raw_batch_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                self.raw_button_group.removeButton(widget)
+                widget.deleteLater()
+        self.raw_batch_layout.addStretch()
+
+    def _populate_raw_selector(self):
+        if not hasattr(self, 'raw_current_radio'):
+            return
+        self.raw_current_radio.blockSignals(True)
+        self.raw_current_radio.setChecked(False)
+        self.raw_current_radio.setEnabled(bool(self._filepath and os.path.isfile(self._filepath)))
+        label = 'Current wafer file'
+        if self._filepath:
+            label = f'Current wafer file  ·  {os.path.basename(self._filepath)}'
+        self.raw_current_radio.setText(label)
+        self.raw_current_radio.blockSignals(False)
+
+        self._clear_raw_batch_buttons()
+        batch_paths = []
+        for rec in self._batch_records:
+            path = rec.get('path')
+            if path and os.path.isfile(path):
+                batch_paths.append(path)
+        for path in batch_paths:
+            btn = QRadioButton(os.path.basename(path))
+            btn.setProperty('raw_path', path)
+            btn.toggled.connect(self._on_raw_selection_changed)
+            self.raw_button_group.addButton(btn)
+            self.raw_batch_layout.insertWidget(self.raw_batch_layout.count() - 1, btn)
+
+        if self._filepath and os.path.isfile(self._filepath):
+            self.raw_current_radio.setChecked(True)
+            self._set_raw_data_path(self._filepath)
+        elif batch_paths:
+            first = self.raw_button_group.buttons()[0]
+            first.setChecked(True)
+            self._set_raw_data_path(batch_paths[0])
+        else:
+            self._set_raw_data_path(None)
+
+    def _set_raw_data_path(self, path: str | None):
+        self._raw_data_path = path
+        if not hasattr(self, 'raw_data_view'):
+            return
+        if not path:
+            self.raw_data_title.setText('Raw file contents')
+            self.raw_data_summary.setText('Load a wafer file or batch folder to inspect raw KDF contents.')
+            self.raw_data_view.setPlainText('')
+            return
+        try:
+            with open(path, 'r', encoding='utf-8', errors='replace') as fh:
+                text = fh.read()
+        except OSError as e:
+            self.raw_data_title.setText('Raw file contents')
+            self.raw_data_summary.setText(f'Could not read raw file: {e}')
+            self.raw_data_view.setPlainText('')
+            return
+        self.raw_data_title.setText(f'Raw file contents  ·  {os.path.basename(path)}')
+        self.raw_data_summary.setText(
+            f'Reading raw KDF text from {os.path.basename(path)}'
+            + (f'  ·  batch files available: {len(self._batch_records)}' if self._batch_records else '')
+        )
+        self.raw_data_view.setPlainText(text)
+
+    def _on_raw_selection_changed(self, checked: bool):
+        if not checked:
+            return
+        sender = self.sender()
+        if sender is self.raw_current_radio:
+            self._set_raw_data_path(self._filepath if self._filepath and os.path.isfile(self._filepath) else None)
+            return
+        if isinstance(sender, QRadioButton):
+            self._set_raw_data_path(sender.property('raw_path'))
 
     def _sync_batch_limit_controls(self):
         if not hasattr(self, 'batch_low_edit'):
@@ -2337,6 +2465,7 @@ class MainWindow(QMainWindow):
 
         self.batch_progress.setVisible(False)
         self._update_batch_table()
+        self._populate_raw_selector()
         self._update_ui_state()
 
         ok_n = len(self._batch_records)
@@ -2398,6 +2527,7 @@ class MainWindow(QMainWindow):
             f'{len(params)} measurements  ·  '
             f'{len(tests)} tests  ·  '
             f'{len(subs)} design(s)  ·  {os.path.basename(path)}')
+        self._populate_raw_selector()
         self._update_batch_table()
         self._set_active_wafer_tab()
         self._sync_batch_limit_controls()
