@@ -679,10 +679,14 @@ class WaferCanvas(QWidget):
                 n = 0.5
             else:
                 n = (v - vmin) / (vmax - vmin)
+            # Saturated green -> yellow -> red ramp (no washed-out mid-point).
+            green = QColor('#2e7d32')
+            yellow = QColor('#f9a825')
+            red = QColor('#c62828')
             if n <= 0.5:
-                bg = _lerp_color(QColor('#2166ac'), QColor('#f7f7f7'), n * 2.0)
+                bg = _lerp_color(green, yellow, n * 2.0)
             else:
-                bg = _lerp_color(QColor('#f7f7f7'), QColor('#b2182b'), (n - 0.5) * 2.0)
+                bg = _lerp_color(yellow, red, (n - 0.5) * 2.0)
             fg = QColor(T['text_primary'])
             bc = bg.darker(120)
             return bg, fg, bc
@@ -798,7 +802,8 @@ class WaferCanvas(QWidget):
                     die_radius, die_radius)
 
             cg = QLinearGradient(rect.topLeft(), rect.bottomRight())
-            cg.setColorAt(0, bg.lighter(108)); cg.setColorAt(1, bg)
+            # Keep the highlight subtle so the ramp stays saturated.
+            cg.setColorAt(0, bg.lighter(104)); cg.setColorAt(1, bg)
             p.setBrush(QBrush(cg))
             p.setPen(QPen(QColor(T['selected']), 2.5) if is_sel
                      else QPen(QColor(T['hover_border']), 2) if is_hov
@@ -836,9 +841,9 @@ class WaferCanvas(QWidget):
 
             grad_rect = QRectF(lx, ly + 6, 180, 14)
             lg = QLinearGradient(grad_rect.left(), grad_rect.top(), grad_rect.right(), grad_rect.top())
-            lg.setColorAt(0.0, QColor('#2166ac'))
-            lg.setColorAt(0.5, QColor('#f7f7f7'))
-            lg.setColorAt(1.0, QColor('#b2182b'))
+            lg.setColorAt(0.0, QColor('#2e7d32'))
+            lg.setColorAt(0.5, QColor('#f9a825'))
+            lg.setColorAt(1.0, QColor('#c62828'))
             p.setPen(QPen(QColor(T['border']), 1))
             p.setBrush(QBrush(lg))
             p.drawRoundedRect(grad_rect, 3, 3)
@@ -1114,7 +1119,7 @@ class HistogramPanel(QWidget):
         self._lo = None
         self._hi = None
         self._bins = 20
-        self.setMinimumHeight(220)
+        self.setMinimumHeight(180)
 
     def set_data(self, values: list[float], lo, hi):
         self._values = [v for v in values if v is not None and math.isfinite(v)]
@@ -1167,6 +1172,29 @@ class HistogramPanel(QWidget):
             x = x_for(mark)
             p.setPen(QPen(QColor(col), 1.5, Qt.DashLine))
             p.drawLine(QPointF(x, chart.top()), QPointF(x, chart.bottom()))
+
+        # Bell curve overlay (normal approximation) to complement Cp/Cpk context.
+        if std_v > 0:
+            span = vmax - vmin
+            if span > 0 and max_bin > 0:
+                bin_width = span / self._bins
+                denom = std_v * math.sqrt(2.0 * math.pi)
+                peak_pdf = 1.0 / denom
+                expected_at_mean = peak_pdf * bin_width * len(vals)
+                scale = (max_bin / expected_at_mean) if expected_at_mean > 0 else 1.0
+
+                steps = 140
+                curve = QPolygonF()
+                for j in range(steps + 1):
+                    x_val = vmin + (j / steps) * span
+                    pdf = math.exp(-((x_val - mean_v) ** 2) / (2.0 * std_v * std_v)) / denom
+                    expected = pdf * bin_width * len(vals) * scale
+                    frac_h = max(0.0, min(1.0, expected / max_bin))
+                    y = (chart.bottom() - 1) - frac_h * (chart.height() - 4)
+                    curve.append(QPointF(x_for(x_val), y))
+
+                p.setPen(QPen(QColor(T['accent_dark']), 2))
+                p.drawPolyline(curve)
 
         p.setPen(QColor(T['text_secondary']))
         p.setFont(QFont('Consolas', 9))
@@ -1244,12 +1272,26 @@ class YieldTrendPanel(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         p.fillRect(self.rect(), QColor(T['bg_panel']))
-        chart = QRectF(36, 16, max(100, self.width() - 48), max(120, self.height() - 30))
+        # Leave room for axis title text at the bottom/left.
+        chart = QRectF(36, 16, max(100, self.width() - 48), max(90, self.height() - 58))
         p.setPen(QPen(QColor(T['border']), 1))
         p.drawRect(chart)
+
+        # Axis names (requested for the lot trend view).
+        p.setPen(QColor(T['text_secondary']))
+        p.setFont(QFont('Segoe UI', 9))
+        p.drawText(QRectF(chart.left(), chart.bottom() + 6, chart.width(), 16),
+                   Qt.AlignCenter, 'Lot')
+        p.save()
+        p.translate(chart.left() - 26, chart.top() + chart.height() / 2)
+        p.rotate(-90)
+        p.drawText(QRectF(-chart.height() / 2, -8, chart.height(), 16),
+                   Qt.AlignCenter, 'Yield (%)')
+        p.restore()
+
         if len(self._points) < 2:
             p.setPen(QColor(T['text_dim']))
-            p.drawText(self.rect(), Qt.AlignCenter, 'Load batch and select measurement to view lot trend')
+            p.drawText(chart, Qt.AlignCenter, 'Load batch and select measurement to view lot trend')
             return
         ys = [y for _, y in self._points]
         ymin, ymax = min(ys), max(ys)
@@ -1304,12 +1346,18 @@ class BatchFailHeatmapPanel(QWidget):
         oy = (self.height() - cell * n_rows) / 2.0
         for d in self._points:
             frac = d['fail_frac']
+            # Saturated green -> yellow -> red ramp for fail frequency.
+            green = QColor('#2e7d32')
+            yellow = QColor('#f9a825')
+            red = QColor('#c62828')
             if frac <= 0.0:
-                bg = QColor(T['pass_bg'])
+                bg = green
             elif frac >= 1.0:
-                bg = QColor(T['fail_bg']).darker(110)
+                bg = red
+            elif frac <= 0.5:
+                bg = _lerp_color(green, yellow, frac * 2.0)
             else:
-                bg = _lerp_color(QColor(T['pass_bg']), QColor(T['fail_bg']), frac)
+                bg = _lerp_color(yellow, red, (frac - 0.5) * 2.0)
             x = ox + (d['x'] - x0) * cell
             y = oy + (y1 - d['y']) * cell
             rect = QRectF(x + 1, y + 1, max(2.0, cell - 2), max(2.0, cell - 2))
@@ -1553,13 +1601,12 @@ class MainWindow(QMainWindow):
         tabs = QTabWidget(); rv.addWidget(tabs)
 
         self.detail_panel = SiteDetailPanel()
-        tabs.addTab(self.detail_panel, 'Die Detail')
-
         self.stats_panel = StatsPanel()
-        tabs.addTab(self.stats_panel, 'Statistics')
         self.analytics_panel = QWidget()
-        av = QVBoxLayout(self.analytics_panel); av.setContentsMargins(8, 8, 8, 8); av.setSpacing(8)
-        self.continuous_heatmap_toggle = QCheckBox('Continuous value heatmap')
+        av = QVBoxLayout(self.analytics_panel); av.setContentsMargins(8, 8, 8, 8); av.setSpacing(6)
+        self.continuous_heatmap_toggle = QCheckBox()
+        self.continuous_heatmap_toggle.setText('')
+        self.continuous_heatmap_toggle.setToolTip('Continuous value heatmap')
         self.continuous_heatmap_toggle.toggled.connect(self._on_continuous_heatmap_toggled)
         av.addWidget(self.continuous_heatmap_toggle)
         self.cpk_label = QLabel('Cp/Cpk: N/A')
@@ -1568,19 +1615,9 @@ class MainWindow(QMainWindow):
         av.addWidget(self.cpk_label)
         self.hist_panel = HistogramPanel()
         av.addWidget(self.hist_panel)
-        scatter_controls = QHBoxLayout()
-        self.scatter_x_combo = ArrowComboBox()
-        self.scatter_y_combo = ArrowComboBox()
-        self.scatter_x_combo.currentTextChanged.connect(self._update_wafer_analytics)
-        self.scatter_y_combo.currentTextChanged.connect(self._update_wafer_analytics)
-        scatter_controls.addWidget(QLabel('X'))
-        scatter_controls.addWidget(self.scatter_x_combo, stretch=1)
-        scatter_controls.addWidget(QLabel('Y'))
-        scatter_controls.addWidget(self.scatter_y_combo, stretch=1)
-        av.addLayout(scatter_controls)
-        self.scatter_panel = ScatterPanel()
-        av.addWidget(self.scatter_panel)
         tabs.addTab(self.analytics_panel, 'Analysis')
+        tabs.addTab(self.stats_panel, 'Statistics')
+        tabs.addTab(self.detail_panel, 'Die Detail')
         mh.addWidget(right)
         self.main_tabs.addTab(wafer_page, 'Wafer View')
 
@@ -1882,10 +1919,7 @@ class MainWindow(QMainWindow):
         self._clear_compare_cards()
         self.canvas.load([], {}, None, None, mkey='')
         self.hist_panel.set_data([], None, None)
-        self.scatter_panel.set_data([], '', '')
         self.cpk_label.setText('Cp/Cpk: N/A')
-        self.scatter_x_combo.clear()
-        self.scatter_y_combo.clear()
         self.batch_trend_panel.set_data([])
         self.batch_fail_site_panel.set_data([])
         self.batch_fail_site_summary.setText('Fail frequency heatmap across wafers.')
@@ -1927,7 +1961,6 @@ class MainWindow(QMainWindow):
             return
         if not self._sites or not self._current_mkey:
             self.hist_panel.set_data([], None, None)
-            self.scatter_panel.set_data([], '', '')
             self.cpk_label.setText('Cp/Cpk: N/A')
             return
         lo, hi, _prod_lo, _prod_hi = self._limits.get(self._current_mkey, (None, None, None, None))
@@ -1949,24 +1982,6 @@ class MainWindow(QMainWindow):
                 self.cpk_label.setText('Cp/Cpk: undefined (std dev is zero)')
         else:
             self.cpk_label.setText('Cp/Cpk: set both Low/High limits and valid data to compute')
-
-        xk = self.scatter_x_combo.currentText().strip()
-        yk = self.scatter_y_combo.currentText().strip()
-        if not xk or not yk:
-            self.scatter_panel.set_data([], xk or 'X', yk or 'Y')
-            return
-        pts = []
-        for s in self._sites:
-            xv = get_site_value(s, xk, self._current_sub)
-            yv = get_site_value(s, yk, self._current_sub)
-            cv = get_site_value(s, self._current_mkey, self._current_sub)
-            if xv is None or yv is None or not (math.isfinite(xv) and math.isfinite(yv)):
-                continue
-            passed = True
-            if cv is not None and math.isfinite(cv):
-                passed = (lo is None or cv >= lo) and (hi is None or cv <= hi)
-            pts.append((xv, yv, passed))
-        self.scatter_panel.set_data(pts, xk, yk)
 
     def _update_batch_trend(self, rows: list[dict]):
         pts = []
@@ -2147,16 +2162,6 @@ class MainWindow(QMainWindow):
             self._current_mkey = params[0]
             self.mkey_combo.setCurrentText(params[0])
             self._refresh_canvas()
-        self.scatter_x_combo.blockSignals(True)
-        self.scatter_y_combo.blockSignals(True)
-        self.scatter_x_combo.clear()
-        self.scatter_y_combo.clear()
-        self.scatter_x_combo.addItems(params)
-        self.scatter_y_combo.addItems(params)
-        if len(params) >= 2:
-            self.scatter_y_combo.setCurrentIndex(1)
-        self.scatter_x_combo.blockSignals(False)
-        self.scatter_y_combo.blockSignals(False)
         self._update_wafer_analytics()
 
         self._update_ui_state()
@@ -2879,19 +2884,30 @@ class MainWindow(QMainWindow):
         self._load_kdf(path)
 
     def _die_fill_hex(self, v, lo, hi, prod_lo, prod_hi, use_prod):
+        # Excel export palette (more saturated / visible than on-screen theme colors).
+        PASS = '#1b5e20'   # saturated green
+        WARN = '#f9a825'   # yellow
+        FAIL = '#c62828'   # red
+        NEUTRAL = '#546e7a'  # blue-grey
+        NODATA = '#7b1fa2'   # purple
+
         if v is None or not math.isfinite(v):
-            return T['nodata_bg']
+            return NODATA
+
         limits_active = (lo is not None or hi is not None)
         if not limits_active:
-            return T['neutral_bg']
+            return NEUTRAL
+
         in_spec = (lo is None or v >= lo) and (hi is None or v <= hi)
         if not in_spec:
-            return T['fail_bg']
+            return FAIL
+
         if use_prod:
             in_prod = (prod_lo is None or v >= prod_lo) and (prod_hi is None or v <= prod_hi)
             if not in_prod:
-                return T['warn_bg']
-        return T['pass_bg']
+                return WARN
+
+        return PASS
 
     def export_map_excel(self):
         if not self._sites:
@@ -2938,6 +2954,22 @@ class MainWindow(QMainWindow):
         thin = Side(style='thin', color='8899AA')
         border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
+        # Excel palette constants (must match `_die_fill_hex()`).
+        PASS = '#1b5e20'
+        WARN = '#f9a825'
+        FAIL = '#c62828'
+        NEUTRAL = '#546e7a'
+        NODATA = '#7b1fa2'
+
+        def excel_text_color(hex_color: str) -> str:
+            # Pick white text for darker fills; black text otherwise.
+            h = hex_color.lstrip('#')
+            r = int(h[0:2], 16)
+            g = int(h[2:4], 16)
+            b = int(h[4:6], 16)
+            lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0
+            return 'FFFFFF' if lum < 0.52 else '000000'
+
         for sub in subs:
             title = f'Design_{sub}' if sub is not None else 'Design_All'
             ws = wb.create_sheet(title=title[:31])
@@ -2953,10 +2985,15 @@ class MainWindow(QMainWindow):
             ws['C4'] = 'Spec pass / Prod fail' if use_prod else 'Fail'
             ws['D4'] = 'Fail'
             ws['E4'] = 'No data'
-            ws['B4'].fill = PatternFill(fill_type='solid', fgColor=T['pass_bg'].replace('#', ''))
-            ws['C4'].fill = PatternFill(fill_type='solid', fgColor=(T['warn_bg'] if use_prod else T['neutral_bg']).replace('#', ''))
-            ws['D4'].fill = PatternFill(fill_type='solid', fgColor=T['fail_bg'].replace('#', ''))
-            ws['E4'].fill = PatternFill(fill_type='solid', fgColor=T['nodata_bg'].replace('#', ''))
+            ws['B4'].fill = PatternFill(fill_type='solid', fgColor=PASS.replace('#', ''))
+            ws['C4'].fill = PatternFill(fill_type='solid', fgColor=(WARN if use_prod else FAIL).replace('#', ''))
+            ws['D4'].fill = PatternFill(fill_type='solid', fgColor=FAIL.replace('#', ''))
+            ws['E4'].fill = PatternFill(fill_type='solid', fgColor=NODATA.replace('#', ''))
+
+            ws['B4'].font = Font(bold=True, color=excel_text_color(PASS))
+            ws['C4'].font = Font(bold=True, color=excel_text_color(WARN if use_prod else FAIL))
+            ws['D4'].font = Font(bold=True, color=excel_text_color(FAIL))
+            ws['E4'].font = Font(bold=True, color=excel_text_color(NODATA))
             for c in ('A1', 'A2', 'A3', 'A4'):
                 ws[c].font = Font(bold=True)
 
@@ -2977,8 +3014,10 @@ class MainWindow(QMainWindow):
                 row = start_row + (y1 - s['y'])
                 col = start_col + (s['x'] - x0)
                 cc = ws.cell(row=row, column=col, value=si_fmt(v) if v is not None else 'N/A')
-                hex_fill = self._die_fill_hex(v, lo, hi, prod_lo, prod_hi, use_prod).replace('#', '')
+                bg_hex = self._die_fill_hex(v, lo, hi, prod_lo, prod_hi, use_prod)
+                hex_fill = bg_hex.replace('#', '')
                 cc.fill = PatternFill(fill_type='solid', fgColor=hex_fill)
+                cc.font = Font(color=excel_text_color(bg_hex))
                 cc.border = border
                 cc.alignment = Alignment(horizontal='center', vertical='center')
 
@@ -3154,8 +3193,6 @@ class MainWindow(QMainWindow):
         self.design_combo.setEnabled(has)
         self.mkey_combo.setEnabled(has)
         self.continuous_heatmap_toggle.setEnabled(has)
-        self.scatter_x_combo.setEnabled(has)
-        self.scatter_y_combo.setEnabled(has)
         self.low_edit.setEnabled(has)
         self.high_edit.setEnabled(has)
         self.prod_toggle.setEnabled(has)
