@@ -67,6 +67,9 @@ T = {
 }
 
 INVALID_LIMIT = object()
+PASS_COLOR = '#0BDA51'
+FAIL_COLOR = '#DC143C'
+WARN_COLOR = '#FDDA0D'
 
 
 def _lerp_color(c1: QColor, c2: QColor, t: float) -> QColor:
@@ -679,10 +682,10 @@ class WaferCanvas(QWidget):
                 n = 0.5
             else:
                 n = (v - vmin) / (vmax - vmin)
-            # Saturated green -> yellow -> red ramp (no washed-out mid-point).
-            green = QColor('#2e7d32')
-            yellow = QColor('#f9a825')
-            red = QColor('#c62828')
+            # Saturated green -> yellow -> red ramp using the requested palette.
+            green = QColor(PASS_COLOR)
+            yellow = QColor(WARN_COLOR)
+            red = QColor(FAIL_COLOR)
             if n <= 0.5:
                 bg = _lerp_color(green, yellow, n * 2.0)
             else:
@@ -841,9 +844,9 @@ class WaferCanvas(QWidget):
 
             grad_rect = QRectF(lx, ly + 6, 180, 14)
             lg = QLinearGradient(grad_rect.left(), grad_rect.top(), grad_rect.right(), grad_rect.top())
-            lg.setColorAt(0.0, QColor('#2e7d32'))
-            lg.setColorAt(0.5, QColor('#f9a825'))
-            lg.setColorAt(1.0, QColor('#c62828'))
+            lg.setColorAt(0.0, QColor(PASS_COLOR))
+            lg.setColorAt(0.5, QColor(WARN_COLOR))
+            lg.setColorAt(1.0, QColor(FAIL_COLOR))
             p.setPen(QPen(QColor(T['border']), 1))
             p.setBrush(QBrush(lg))
             p.drawRoundedRect(grad_rect, 3, 3)
@@ -1165,12 +1168,17 @@ class HistogramPanel(QWidget):
         def x_for(v):
             return chart.left() + ((v - vmin) / (vmax - vmin)) * chart.width()
 
-        for mark, col in ((self._lo, T['fail_fg']), (self._hi, T['fail_fg']),
-                          (mean_v - 3 * std_v, T['warn']), (mean_v + 3 * std_v, T['warn'])):
+        markers = [
+            ('Spec low', self._lo, FAIL_COLOR, Qt.DashLine),
+            ('Spec high', self._hi, '#8B0000', Qt.DashLine),
+            ('Mean - 3σ', mean_v - 3 * std_v, WARN_COLOR, Qt.DotLine),
+            ('Mean + 3σ', mean_v + 3 * std_v, '#C9A400', Qt.DotLine),
+        ]
+        for _label, mark, col, style in markers:
             if mark is None:
                 continue
             x = x_for(mark)
-            p.setPen(QPen(QColor(col), 1.5, Qt.DashLine))
+            p.setPen(QPen(QColor(col), 1.5, style))
             p.drawLine(QPointF(x, chart.top()), QPointF(x, chart.bottom()))
 
         # Bell curve overlay (normal approximation) to complement Cp/Cpk context.
@@ -1215,6 +1223,26 @@ class HistogramPanel(QWidget):
         p.drawText(QRectF(-chart.height() / 2, -8, chart.height(), 16),
                    Qt.AlignCenter, 'Count')
         p.restore()
+
+        legend_items = [('Bell curve', T['accent_dark'], Qt.SolidLine)]
+        for label, mark, col, style in markers:
+            if mark is not None:
+                legend_items.append((label, col, style))
+        if legend_items:
+            legend_x = chart.left() + 6
+            legend_y = chart.top() + 6
+            legend_w = min(chart.width() - 12, 170)
+            legend_h = 18 + 16 * len(legend_items)
+            p.setBrush(QColor(255, 250, 242, 220))
+            p.setPen(QPen(QColor(T['border']), 1))
+            p.drawRoundedRect(QRectF(legend_x - 4, legend_y - 4, legend_w, legend_h), 6, 6)
+            p.setFont(QFont('Segoe UI', 8))
+            for idx, (label, col, style) in enumerate(legend_items):
+                y = legend_y + idx * 16 + 6
+                p.setPen(QPen(QColor(col), 1.8, style))
+                p.drawLine(QPointF(legend_x + 4, y), QPointF(legend_x + 22, y))
+                p.setPen(QColor(T['text_primary']))
+                p.drawText(QRectF(legend_x + 28, y - 8, legend_w - 34, 16), Qt.AlignVCenter, label)
 
 
 class YieldDonutPanel(QWidget):
@@ -1268,24 +1296,20 @@ class YieldDonutPanel(QWidget):
         fail_span = -360 * 16 - pass_span
 
         p.setPen(Qt.NoPen)
-        p.setBrush(QColor(T['pass_fg']))
+        p.setBrush(QColor(PASS_COLOR))
         p.drawPie(outer, start, pass_span)
-        p.setBrush(QColor(T['fail_fg']))
+        p.setBrush(QColor(FAIL_COLOR))
         p.drawPie(outer, start + pass_span, fail_span)
         p.setBrush(QColor(T['bg_panel']))
         p.drawEllipse(outer.adjusted(inner_margin, inner_margin, -inner_margin, -inner_margin))
-
-        p.setPen(QColor(T['text_primary']))
-        p.setFont(QFont('Segoe UI', 16, QFont.Bold))
-        p.drawText(outer, Qt.AlignCenter, f'{(self._pass / total) * 100.0:.0f}%')
 
         legend_x = outer.right() + 14
         legend_y = outer.top() + 18
         p.setFont(QFont('Segoe UI', 10))
         for idx, (label, value, color) in enumerate((
-            ('Pass', self._pass, T['pass_fg']),
-            ('Fail', self._fail, T['fail_fg']),
-            ('Near limit', self._warn, T['warn']),
+            ('Pass', self._pass, PASS_COLOR),
+            ('Fail', self._fail, FAIL_COLOR),
+            ('Near limit', self._warn, WARN_COLOR),
         )):
             if idx == 2 and value <= 0:
                 continue
@@ -1296,6 +1320,52 @@ class YieldDonutPanel(QWidget):
             p.setPen(QColor(T['text_primary']))
             p.drawText(QRectF(legend_x + 16, y - 5, max(80, body.right() - legend_x - 12), 20),
                        Qt.AlignVCenter, f'{label}: {value}')
+
+
+class MiniHeatmapPanel(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._points = []
+        self.setMinimumHeight(150)
+
+    def set_data(self, points: list[dict]):
+        self._points = points
+        self.update()
+
+    def paintEvent(self, _event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.fillRect(self.rect(), QColor(T['bg_panel']))
+        if not self._points:
+            p.setPen(QColor(T['text_dim']))
+            p.drawText(self.rect(), Qt.AlignCenter, 'No mini heatmap data')
+            return
+
+        xs = [d['x'] for d in self._points]
+        ys = [d['y'] for d in self._points]
+        x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
+        n_cols = x1 - x0 + 1
+        n_rows = y1 - y0 + 1
+        body = self.rect().adjusted(8, 8, -8, -8)
+        cell = min(body.width() / max(1, n_cols), body.height() / max(1, n_rows))
+        ox = body.left() + (body.width() - cell * n_cols) / 2.0
+        oy = body.top() + (body.height() - cell * n_rows) / 2.0
+
+        for d in self._points:
+            if d['status'] == 'fail':
+                bg = QColor(FAIL_COLOR)
+            elif d['status'] == 'warn':
+                bg = QColor(WARN_COLOR)
+            elif d['status'] == 'pass':
+                bg = QColor(PASS_COLOR)
+            else:
+                bg = QColor(T['nodata_bg'])
+            x = ox + (d['x'] - x0) * cell
+            y = oy + (y1 - d['y']) * cell
+            rect = QRectF(x + 1, y + 1, max(2.0, cell - 2), max(2.0, cell - 2))
+            p.setBrush(bg)
+            p.setPen(QPen(QColor(T['border']), 0.8))
+            p.drawRoundedRect(rect, 2.5, 2.5)
 
 
 class ScatterPanel(QWidget):
@@ -1443,9 +1513,9 @@ class BatchFailHeatmapPanel(QWidget):
         for d in self._points:
             frac = d['fail_frac']
             # Saturated green -> yellow -> red ramp for fail frequency.
-            green = QColor('#2e7d32')
-            yellow = QColor('#f9a825')
-            red = QColor('#c62828')
+            green = QColor(PASS_COLOR)
+            yellow = QColor(WARN_COLOR)
+            red = QColor(FAIL_COLOR)
             if frac <= 0.0:
                 bg = green
             elif frac >= 1.0:
@@ -1723,7 +1793,7 @@ class MainWindow(QMainWindow):
         dv.addWidget(dist_summary)
         self.hist_panel = HistogramPanel()
         self.hist_panel.setMinimumHeight(170)
-        self.hist_panel.setMaximumHeight(240)
+        self.hist_panel.setMaximumHeight(220)
         dv.addWidget(self.hist_panel)
         av.addWidget(dist_box)
 
@@ -1731,7 +1801,17 @@ class MainWindow(QMainWindow):
         ov = QVBoxLayout(yield_box); ov.setContentsMargins(8, 8, 8, 8); ov.setSpacing(6)
         self.yield_donut_panel = YieldDonutPanel()
         ov.addWidget(self.yield_donut_panel)
-        av.addWidget(yield_box, stretch=1)
+        av.addWidget(yield_box)
+
+        mini_heatmap_box = QGroupBox('Mini Heatmap')
+        mhv = QVBoxLayout(mini_heatmap_box); mhv.setContentsMargins(8, 8, 8, 8); mhv.setSpacing(6)
+        mini_summary = QLabel('Compact wafer overview using pass / near-limit / fail colors.')
+        mini_summary.setWordWrap(True)
+        mini_summary.setStyleSheet(f'color:{T["text_secondary"]};font-size:12px;')
+        mhv.addWidget(mini_summary)
+        self.mini_heatmap_panel = MiniHeatmapPanel()
+        mhv.addWidget(self.mini_heatmap_panel)
+        av.addWidget(mini_heatmap_box, stretch=1)
         tabs.addTab(self.analytics_panel, 'Analysis')
         tabs.addTab(self.stats_panel, 'Statistics')
         tabs.addTab(self.detail_panel, 'Die Detail')
@@ -2038,6 +2118,8 @@ class MainWindow(QMainWindow):
         self.hist_panel.set_data([], None, None)
         if hasattr(self, 'yield_donut_panel'):
             self.yield_donut_panel.set_data(0, 0, 0)
+        if hasattr(self, 'mini_heatmap_panel'):
+            self.mini_heatmap_panel.set_data([])
         self.cpk_label.setText('Cp/Cpk: N/A')
         self.batch_trend_panel.set_data([])
         self.batch_fail_site_panel.set_data([])
@@ -2093,6 +2175,8 @@ class MainWindow(QMainWindow):
             self.hist_panel.set_data([], None, None)
             if hasattr(self, 'yield_donut_panel'):
                 self.yield_donut_panel.set_data(0, 0, 0)
+            if hasattr(self, 'mini_heatmap_panel'):
+                self.mini_heatmap_panel.set_data([])
             self.cpk_label.setText('Cp/Cpk: N/A')
             return
         lo, hi, _prod_lo, _prod_hi = self._limits.get(self._current_mkey, (None, None, None, None))
@@ -2100,23 +2184,31 @@ class MainWindow(QMainWindow):
         passed = 0
         failed = 0
         warned = 0
+        mini_points = []
         for s in self._sites:
             v = get_site_value(s, self._current_mkey, self._current_sub)
             if v is None or not math.isfinite(v):
+                mini_points.append({'x': s.get('x', 0), 'y': s.get('y', 0), 'status': 'nodata'})
                 continue
             finite_vals.append(v)
             is_fail = (lo is not None and v < lo) or (hi is not None and v > hi)
             if is_fail:
                 failed += 1
+                mini_points.append({'x': s.get('x', 0), 'y': s.get('y', 0), 'status': 'fail'})
                 continue
             passed += 1
             near_lo = lo is not None and abs(v - lo) <= max(1e-18, abs(lo) * 0.02)
             near_hi = hi is not None and abs(v - hi) <= max(1e-18, abs(hi) * 0.02)
             if near_lo or near_hi:
                 warned += 1
+                mini_points.append({'x': s.get('x', 0), 'y': s.get('y', 0), 'status': 'warn'})
+            else:
+                mini_points.append({'x': s.get('x', 0), 'y': s.get('y', 0), 'status': 'pass'})
         self.hist_panel.set_data(finite_vals, lo, hi)
         if hasattr(self, 'yield_donut_panel'):
             self.yield_donut_panel.set_data(passed, failed, warned)
+        if hasattr(self, 'mini_heatmap_panel'):
+            self.mini_heatmap_panel.set_data(mini_points)
 
         if finite_vals and lo is not None and hi is not None:
             mean_v = statistics.mean(finite_vals)
@@ -3046,9 +3138,9 @@ class MainWindow(QMainWindow):
 
     def _die_fill_hex(self, v, lo, hi, prod_lo, prod_hi, use_prod):
         # Excel export palette (more saturated / visible than on-screen theme colors).
-        PASS = '#1b5e20'   # saturated green
-        WARN = '#f9a825'   # yellow
-        FAIL = '#c62828'   # red
+        PASS = PASS_COLOR
+        WARN = WARN_COLOR
+        FAIL = FAIL_COLOR
         NEUTRAL = '#546e7a'  # blue-grey
         NODATA = '#7b1fa2'   # purple
 
@@ -3116,9 +3208,9 @@ class MainWindow(QMainWindow):
         border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
         # Excel palette constants (must match `_die_fill_hex()`).
-        PASS = '#1b5e20'
-        WARN = '#f9a825'
-        FAIL = '#c62828'
+        PASS = PASS_COLOR
+        WARN = WARN_COLOR
+        FAIL = FAIL_COLOR
         NEUTRAL = '#546e7a'
         NODATA = '#7b1fa2'
 
