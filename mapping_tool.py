@@ -1544,8 +1544,8 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
         self._update_ui_state()
-        # Keep startup behavior consistent across Windows versions.
-        self.setWindowState(self.windowState() | Qt.WindowMaximized)
+        # Explicit show ensures the window actually appears on all platforms.
+        self.showMaximized()
 
     def _build_ui(self):
         tb = QToolBar('Main', self)
