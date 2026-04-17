@@ -1521,6 +1521,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle('Wafer Map Viewer')
         self.resize(1300, 840)
+        self.setMinimumSize(1200, 760)
         self.setStyleSheet(SS)
         self.setWindowIcon(make_app_icon())
 
@@ -1543,7 +1544,8 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
         self._update_ui_state()
-        self.showMaximized()
+        # Keep startup behavior consistent across Windows versions.
+        self.setWindowState(self.windowState() | Qt.WindowMaximized)
 
     def _build_ui(self):
         tb = QToolBar('Main', self)
@@ -3635,6 +3637,9 @@ class MainWindow(QMainWindow):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main():
+    # Use a consistent DPI baseline so UI layout remains stable
+    # across different display resolutions/scaling settings.
+    QApplication.setAttribute(Qt.AA_Use96Dpi, True)
     app = QApplication(sys.argv)
     app.setApplicationName('Wafer Map Viewer')
     app.setStyle('Fusion')
