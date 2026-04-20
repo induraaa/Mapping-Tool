@@ -48,7 +48,7 @@ python wafer_mapper_light.py
 
 Then open a .kdf file from the UI.
 
-🧠 How It Works
+## 🧠 How It Works
 
 Parses KDF files into:
 Header metadata
@@ -84,7 +84,7 @@ CSV / database import support
 Dark mode toggle
 Performance optimisation for large datasets
 
-🤝 Contributing
+## 🤝 Contributing
 
 Pull requests are welcome. For major changes, open an issue first to discuss ideas.
 
@@ -96,7 +96,7 @@ MIT License — feel free to use and modify.
 Built with PySide6 (Qt for Python)
 Designed for semiconductor test data workflows
 
-⭐ Support
+#⭐ Support
 
 If you find this useful, give it a star ⭐ — it helps a lot!
 
