@@ -10,9 +10,9 @@ Visualise die-level data across the wafer
 Zoom, hover, and click to inspect values
 
 📊 Advanced Data Analysis
-Built-in statistics (mean, std dev, yield, etc.)
+Built-in statistics (mean, std dev, yield)
 Histogram with normal distribution overlay
-Scatter plots and yield trends
+Scatter plots, yield trends
 
 🎯 Pass/Fail & Limits
 Spec limits and production limits
