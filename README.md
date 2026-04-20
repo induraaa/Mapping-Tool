@@ -71,7 +71,7 @@ Wafer view
 Site detail
 Statistics
 
-##Charts
+## Charts
 📦 Project Structure
 .
 ├── wafer_mapper_light.py   # Main application
