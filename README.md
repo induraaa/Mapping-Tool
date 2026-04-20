@@ -1,4 +1,4 @@
-🧪 #Wafer Map Viewer
+# Keithley Analyser
 Interactive KDF Visualisation Tool
 
 A powerful desktop application for exploring and analysing semiconductor wafer test data with intuitive visualisations and rich statistics.
