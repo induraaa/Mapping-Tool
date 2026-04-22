@@ -1151,7 +1151,9 @@ class HistogramPanel(QWidget):
             bins[idx] += 1
         max_bin = max(bins) if bins else 1
 
-        chart = QRectF(48, 18, max(80, self.width() - 64), max(120, self.height() - 56))
+        # Reserve a bit more room at the bottom for axis labels/ticks and
+        # reclaim that space from the top so labels do not get clipped.
+        chart = QRectF(48, 8, max(80, self.width() - 64), max(112, self.height() - 56))
         p.setPen(QPen(QColor(T['border']), 1))
         p.drawRect(chart)
         bw = chart.width() / self._bins
