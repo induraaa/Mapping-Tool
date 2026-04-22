@@ -1151,17 +1151,25 @@ class HistogramPanel(QWidget):
             bins[idx] += 1
         max_bin = max(bins) if bins else 1
 
-        # Reserve a bit more room at the bottom for axis labels/ticks and
-        # reclaim that space from the top so labels do not get clipped.
-        chart = QRectF(48, 8, max(80, self.width() - 64), max(112, self.height() - 56))
+        # Keep margins scale-friendly so bottom labels do not clip on 125% DPI.
+        left_margin = 50
+        right_margin = 14
+        top_margin = 8
+        bottom_margin = 34
+        chart = QRectF(
+            left_margin,
+            top_margin,
+            max(80, self.width() - (left_margin + right_margin)),
+            max(108, self.height() - (top_margin + bottom_margin)),
+        )
         p.setPen(QPen(QColor(T['border']), 1))
         p.drawRect(chart)
         bw = chart.width() / self._bins
         for i, cnt in enumerate(bins):
             h = (cnt / max_bin) * (chart.height() - 4) if max_bin else 0
             r = QRectF(chart.left() + i * bw + 1, chart.bottom() - h - 1, max(1.0, bw - 2), h)
-            p.fillRect(r, QColor(T['accent_dim']))
-            p.setPen(QColor(T['accent']))
+            p.fillRect(r, QColor('#d7e6fb'))
+            p.setPen(QColor('#4e78b3'))
             p.drawRect(r)
 
         mean_v = statistics.mean(vals)
@@ -1207,13 +1215,8 @@ class HistogramPanel(QWidget):
         p.setPen(QColor(T['text_secondary']))
         font_ticks = QFont('Consolas', 9)
         p.setFont(font_ticks)
-        p.drawText(QRectF(chart.left(), chart.bottom() + 2, 80, 14), si_fmt(vmin))
-        p.drawText(QRectF(chart.right() - 80, chart.bottom() + 2, 80, 14), Qt.AlignRight, si_fmt(vmax))
-
-        # X axis name: measurement value.
-        p.setFont(QFont('Segoe UI', 9))
-        p.drawText(QRectF(chart.left(), chart.bottom() + 18, chart.width(), 16),
-                   Qt.AlignCenter, 'Measurement value')
+        p.drawText(QRectF(chart.left(), chart.bottom() + 4, 86, 14), si_fmt(vmin))
+        p.drawText(QRectF(chart.right() - 86, chart.bottom() + 4, 86, 14), Qt.AlignRight, si_fmt(vmax))
 
         # Y axis name: count, rotated on the left.
         p.save()
@@ -1781,10 +1784,6 @@ class MainWindow(QMainWindow):
 
         dist_box = QGroupBox('Distribution')
         dv = QVBoxLayout(dist_box); dv.setContentsMargins(10, 10, 10, 10); dv.setSpacing(8)
-        dist_summary = QLabel('Histogram with normal-fit overlay for the selected measurement.')
-        dist_summary.setWordWrap(True)
-        dist_summary.setStyleSheet(f'color:{T["text_secondary"]};font-size:12px;')
-        dv.addWidget(dist_summary)
         self.hist_panel = HistogramPanel()
         self.hist_panel.setMinimumHeight(170)
         self.hist_panel.setMaximumHeight(220)
