@@ -1615,7 +1615,10 @@ class MainWindow(QMainWindow):
         mh = QHBoxLayout(wafer_page); mh.setSpacing(12); mh.setContentsMargins(2, 2, 2, 2)
 
         # ── left panel ────────────────────────────────────────────────────────
-        left = QWidget(); left.setFixedWidth(320)
+        left = QWidget()
+        left.setMinimumWidth(280)
+        left.setMaximumWidth(420)
+        left.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         lv = QVBoxLayout(left); lv.setSpacing(14); lv.setContentsMargins(2, 2, 2, 2)
 
         ib = QGroupBox('File Information')
@@ -1749,7 +1752,10 @@ class MainWindow(QMainWindow):
         mh.addWidget(canvas_wrap, stretch=3)
 
         # ── right panel ───────────────────────────────────────────────────────
-        right = QWidget(); right.setFixedWidth(310)
+        right = QWidget()
+        right.setMinimumWidth(280)
+        right.setMaximumWidth(420)
+        right.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         rv = QVBoxLayout(right); rv.setContentsMargins(0, 0, 0, 0)
         tabs = QTabWidget(); rv.addWidget(tabs)
 
@@ -3637,6 +3643,14 @@ class MainWindow(QMainWindow):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main():
+    # Keep DPI scaling behavior stable across mixed Windows display settings
+    # (e.g., 100%, 125%, 150%) to reduce layout jitter/truncation.
+    try:
+        QApplication.setHighDpiScaleFactorRoundingPolicy(
+            Qt.HighDpiScaleFactorRoundingPolicy.RoundPreferFloor
+        )
+    except Exception:
+        pass
     app = QApplication(sys.argv)
     app.setApplicationName('Wafer Map Viewer')
     app.setStyle('Fusion')
