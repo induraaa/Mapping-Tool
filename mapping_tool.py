@@ -370,17 +370,40 @@ class ArrowComboBox(QComboBox):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def make_app_icon() -> QIcon:
-    # Prefer a local icon asset if present (portable across machines).
-    # Drop a `wafer_icon` file next to this script (e.g. wafer_icon.ico/png/icns).
-    base_dir = os.path.dirname(__file__)
+    # Prefer explicit icon assets from common names, both in source and frozen builds.
     preferred_exts = ('.ico', '.png', '.icns', '.jpg', '.jpeg')
+    search_dirs = []
+    if getattr(sys, "frozen", False):
+        # PyInstaller onefile/onedir support.
+        search_dirs.extend([
+            getattr(sys, "_MEIPASS", ""),
+            os.path.dirname(sys.executable),
+        ])
+    search_dirs.append(os.path.dirname(__file__))
+    search_dirs = [d for d in search_dirs if d and os.path.isdir(d)]
+
+    explicit_names = [
+        "app_icon.ico",
+        "wafer_icon.ico",
+        "icon.ico",
+        "app_icon.png",
+        "wafer_icon.png",
+    ]
+    for d in search_dirs:
+        for nm in explicit_names:
+            pth = os.path.join(d, nm)
+            if os.path.isfile(pth):
+                return QIcon(pth)
+
+    # Backward-compatible prefix scan.
     try:
-        for name in os.listdir(base_dir):
-            low = name.lower()
-            if low.startswith('wafer_icon') and low.endswith(preferred_exts):
-                pth = os.path.join(base_dir, name)
-                if os.path.isfile(pth):
-                    return QIcon(pth)
+        for d in search_dirs:
+            for name in os.listdir(d):
+                low = name.lower()
+                if (low.startswith('wafer_icon') or low.startswith('app_icon')) and low.endswith(preferred_exts):
+                    pth = os.path.join(d, name)
+                    if os.path.isfile(pth):
+                        return QIcon(pth)
     except OSError:
         pass
 
@@ -3653,6 +3676,16 @@ class MainWindow(QMainWindow):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main():
+    if sys.platform.startswith('win'):
+        # Ensure taskbar grouping/icon uses this app identity for packaged EXE.
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                "ACS.WaferMapViewer"
+            )
+        except Exception:
+            pass
+
     # Keep DPI scaling behavior stable across mixed Windows display settings
     # (e.g., 100%, 125%, 150%) to reduce layout jitter/truncation.
     try:
