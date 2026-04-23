@@ -1548,10 +1548,15 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle('Wafer Map Viewer')
-        self.resize(1300, 840)
-        self.setMinimumSize(1200, 760)
         self.setStyleSheet(SS)
         self.setWindowIcon(make_app_icon())
+        # Use available geometry so the window respects the taskbar on any display.
+        screen = QApplication.primaryScreen()
+        avail = screen.availableGeometry()  # excludes taskbar/dock
+        init_w = max(1200, int(avail.width()  * 0.92))
+        init_h = max(760,  int(avail.height() * 0.92))
+        self.resize(init_w, init_h)
+        self.setMinimumSize(min(1200, avail.width()), min(760, avail.height()))
 
         self._header:       dict      = {}
         self._sites:        list      = []
@@ -1570,10 +1575,27 @@ class MainWindow(QMainWindow):
         self._batch_rows: list[dict] = []
         self._raw_data_path: str | None = None
 
+        # Lock to maximized — remove the restore-down button so the user
+        # cannot un-maximize the window.
+        self.setWindowFlags(
+            self.windowFlags()
+            & ~Qt.WindowMinMaxButtonsHint
+            | Qt.WindowMaximizeButtonHint
+            | Qt.WindowCloseButtonHint
+        )
+
         self._build_ui()
         self._update_ui_state()
-        # Explicit show ensures the window actually appears on all platforms.
+        # Always open maximized and prevent restoring to windowed mode.
         self.showMaximized()
+
+    def changeEvent(self, event):
+        """Prevent the window from being restored to a non-maximized state."""
+        super().changeEvent(event)
+        from PySide6.QtCore import QEvent
+        if event.type() == QEvent.WindowStateChange:
+            if not (self.windowState() & Qt.WindowMaximized):
+                self.showMaximized()
 
     def _build_ui(self):
         tb = QToolBar('Main', self)
@@ -1835,7 +1857,11 @@ class MainWindow(QMainWindow):
         wafer_splitter.setStretchFactor(0, 0)
         wafer_splitter.setStretchFactor(1, 1)
         wafer_splitter.setStretchFactor(2, 0)
-        wafer_splitter.setSizes([320, 900, 340])
+        _avail_w = QApplication.primaryScreen().availableGeometry().width()
+        _left_w  = max(280, int(_avail_w * 0.20))
+        _right_w = max(280, int(_avail_w * 0.22))
+        _mid_w   = max(400, _avail_w - _left_w - _right_w - 60)
+        wafer_splitter.setSizes([_left_w, _mid_w, _right_w])
         mh.addWidget(wafer_splitter)
         self.main_tabs.addTab(wafer_page, 'Wafer View')
 
@@ -3705,4 +3731,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
