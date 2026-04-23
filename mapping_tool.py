@@ -79,42 +79,91 @@ def _lerp_color(c1: QColor, c2: QColor, t: float) -> QColor:
     b = int(c1.blue() + (c2.blue() - c1.blue()) * t)
     return QColor(r, g, b)
 
-SS = """
+def _dpi_scale() -> float:
+    """Return the primary screen's device-pixel ratio, clamped to [1.0, 2.0]."""
+    try:
+        app = QApplication.instance()
+        if app:
+            screen = app.primaryScreen()
+            if screen:
+                return max(1.0, min(2.0, screen.devicePixelRatio()))
+    except Exception:
+        pass
+    return 1.0
+
+
+def build_stylesheet() -> str:
+    """Build the application stylesheet scaled for the current DPI."""
+    s = _dpi_scale()
+    # At 125 % Windows scaling the devicePixelRatio is 1.25.
+    # We compress the UI proportionally so nothing overlaps or overflows.
+    def px(base: int) -> str:
+        return f"{max(1, round(base / s))}px"
+
+    # Font sizes: base values designed for 100 % (96 dpi).
+    fs_normal  = px(13)
+    fs_small   = px(12)
+    fs_smaller = px(11)
+    fs_large   = px(14)
+
+    # Spacing / padding helpers
+    pad_btn    = f"{px(5)} {px(13)}"    # vertical horizontal
+    pad_combo  = f"{px(5)} {px(30)} {px(5)} {px(10)}"
+    pad_input  = f"{px(5)} {px(9)}"
+    pad_tab    = f"{px(6)} {px(14)}"
+    pad_header = f"{px(6)} {px(9)}"
+    pad_item   = f"{px(4)} {px(6)}"
+    pad_tb     = f"{px(5)} {px(10)}"
+
+    mh_btn    = px(26)   # QPushButton min-height
+    mh_combo  = px(30)   # QComboBox min-height
+    mh_input  = px(26)   # QLineEdit/QSpinBox min-height
+    mh_tb_btn = px(28)   # toolbar button min-height
+
+    r_large  = px(10)
+    r_medium = px(8)
+    r_small  = px(6)
+    r_tiny   = px(4)
+
+    gb_mtop  = px(20)
+    gb_pad   = f"{px(10)} {px(8)} {px(8)} {px(8)}"
+
+    return ("""
 QMainWindow,QWidget{
     background-color:""" + T['bg_app'] + """;
     color:""" + T['text_primary'] + """;
     font-family:'Segoe UI','Calibri',sans-serif;
-    font-size:13px;
+    font-size:""" + fs_normal + """;
 }
 QGroupBox{
     background-color:""" + T['bg_panel'] + """;
     border:1px solid """ + T['border'] + """;
-    border-radius:12px;
-    margin-top:22px;
-    padding:12px 10px 10px 10px;
+    border-radius:""" + r_large + """;
+    margin-top:""" + gb_mtop + """;
+    padding:""" + gb_pad + """;
     font-weight:bold;
-    font-size:12px;
+    font-size:""" + fs_small + """;
 }
 QGroupBox::title{
     subcontrol-origin:margin;
-    left:14px;
-    padding:3px 9px;
+    left:""" + px(12) + """;
+    padding:""" + f"{px(2)} {px(7)}" + """;
     background:""" + T['bg_panel'] + """;
     color:""" + T['accent'] + """;
-    font-size:12px;
+    font-size:""" + fs_small + """;
     font-weight:bold;
-    border-radius:4px;
+    border-radius:""" + r_tiny + """;
 }
-QLabel{background:transparent;color:""" + T['text_primary'] + """;font-size:13px;}
+QLabel{background:transparent;color:""" + T['text_primary'] + """;font-size:""" + fs_normal + """;}
 QPushButton{
     background-color:""" + T['bg_panel'] + """;
     border:1px solid """ + T['border_hi'] + """;
-    border-radius:10px;
-    padding:7px 16px;
+    border-radius:""" + r_medium + """;
+    padding:""" + pad_btn + """;
     color:""" + T['text_primary'] + """;
     font-weight:600;
-    font-size:13px;
-    min-height:30px;
+    font-size:""" + fs_normal + """;
+    min-height:""" + mh_btn + """;
 }
 QPushButton:hover{
     background-color:""" + T['accent_dim'] + """;
@@ -127,105 +176,81 @@ QPushButton#primary{
     border:1px solid """ + T['accent_dark'] + """;
     color:white;
     font-weight:bold;
-    border-radius:8px;
+    border-radius:""" + r_small + """;
 }
 QPushButton#primary:hover{background-color:""" + T['accent_dark'] + """;}
 QComboBox{
     background-color:""" + T['bg_panel'] + """;
     border:1px solid """ + T['border'] + """;
-    border-radius:10px;
-    padding:6px 36px 6px 12px;
+    border-radius:""" + r_medium + """;
+    padding:""" + pad_combo + """;
     color:""" + T['text_primary'] + """;
-    font-size:13px;
-    min-height:34px;
+    font-size:""" + fs_normal + """;
+    min-height:""" + mh_combo + """;
 }
 QComboBox:hover{border:1px solid """ + T['accent'] + """;}
 QComboBox:focus{border:1px solid """ + T['accent'] + """;}
 QComboBox::drop-down{
     subcontrol-origin:padding;
     subcontrol-position:right center;
-    width:32px;
+    width:""" + px(28) + """;
     border:none;
     border-left:1px solid """ + T['border'] + """;
-    border-top-right-radius:8px;
-    border-bottom-right-radius:8px;
+    border-top-right-radius:""" + r_small + """;
+    border-bottom-right-radius:""" + r_small + """;
     background:""" + T['bg_header'] + """;
 }
-QComboBox::down-arrow{
-    image:none;
-    width:0px;
-    height:0px;
-}
+QComboBox::down-arrow{image:none;width:0px;height:0px;}
 QComboBox QAbstractItemView{
     background:""" + T['bg_panel'] + """;
     border:none;
     border-radius:0px;
     selection-background-color:""" + T['accent_dim'] + """;
     color:""" + T['text_primary'] + """;
-    font-size:13px;
-    padding:4px;
+    font-size:""" + fs_normal + """;
+    padding:""" + px(3) + """;
     outline:0;
 }
-/* ComboBox popup: avoid double frame (common on Windows) */
 QComboBoxPrivateContainer{
     background:""" + T['bg_panel'] + """;
     border:1px solid """ + T['border_hi'] + """;
-    border-radius:0px;
-    padding:0px;
-    margin:0px;
+    border-radius:0px;padding:0px;margin:0px;
 }
-QComboBoxPrivateContainer QFrame{
-    border:none;
-}
-QComboBoxPrivateContainer QListView{
-    border:none;
-    background:""" + T['bg_panel'] + """;
-    outline:0;
-}
-QComboBoxPrivateContainer QAbstractScrollArea{
-    border:none;
-}
-QComboBoxPrivateContainer QAbstractScrollArea::viewport{
-    background:""" + T['bg_panel'] + """;
-    border:none;
-}
-QComboBoxPrivateContainer *{
-    border:none;
-    outline:0;
-}
+QComboBoxPrivateContainer QFrame{border:none;}
+QComboBoxPrivateContainer QListView{border:none;background:""" + T['bg_panel'] + """;outline:0;}
+QComboBoxPrivateContainer QAbstractScrollArea{border:none;}
+QComboBoxPrivateContainer QAbstractScrollArea::viewport{background:""" + T['bg_panel'] + """;border:none;}
+QComboBoxPrivateContainer *{border:none;outline:0;}
 QLineEdit,QSpinBox{
     background-color:""" + T['bg_panel'] + """;
     border:1px solid """ + T['border'] + """;
-    border-radius:10px;
-    padding:6px 10px;
+    border-radius:""" + r_medium + """;
+    padding:""" + pad_input + """;
     color:""" + T['text_primary'] + """;
-    font-size:13px;
-    min-height:30px;
+    font-size:""" + fs_normal + """;
+    min-height:""" + mh_input + """;
 }
 QLineEdit:focus,QSpinBox:focus{border:1px solid """ + T['accent'] + """;}
 QSpinBox::up-button,QSpinBox::down-button{
-    width:20px;
+    width:""" + px(18) + """;
     background:""" + T['bg_header'] + """;
-    border:none;
-    border-radius:4px;
+    border:none;border-radius:""" + r_tiny + """;
 }
 QTreeWidget,QTableWidget{
     background-color:""" + T['bg_panel'] + """;
     border:1px solid """ + T['border'] + """;
-    border-radius:10px;
+    border-radius:""" + r_medium + """;
     alternate-background-color:""" + T['bg_row_alt'] + """;
     outline:none;
-    font-size:13px;
+    font-size:""" + fs_normal + """;
 }
-QTreeWidget::item,QTableWidget::item{padding:6px 7px;border:none;}
+QTreeWidget::item,QTableWidget::item{padding:""" + pad_item + """;border:none;}
 QTreeWidget::item:hover,QTableWidget::item:hover{
-    background-color:""" + T['accent_dim'] + """;
-    border-radius:4px;
+    background-color:""" + T['accent_dim'] + """;border-radius:""" + r_tiny + """;
 }
 QTreeWidget::item:selected,QTableWidget::item:selected{
     background-color:""" + T['accent_dim'] + """;
-    color:""" + T['accent_dark'] + """;
-    border-radius:4px;
+    color:""" + T['accent_dark'] + """;border-radius:""" + r_tiny + """;
 }
 QHeaderView::section{
     background-color:""" + T['bg_header'] + """;
@@ -233,82 +258,68 @@ QHeaderView::section{
     border:none;
     border-right:1px solid """ + T['border'] + """;
     border-bottom:1px solid """ + T['border'] + """;
-    padding:7px 10px;
-    font-size:12px;
+    padding:""" + pad_header + """;
+    font-size:""" + fs_small + """;
     font-weight:bold;
 }
-QHeaderView::section:first{border-top-left-radius:8px;}
-QHeaderView::section:last{border-top-right-radius:8px;border-right:none;}
-QScrollBar:vertical{
-    background:""" + T['bg_app'] + """;
-    width:9px;border:none;border-radius:4px;
-}
-QScrollBar::handle:vertical{
-    background:""" + T['border_hi'] + """;
-    border-radius:4px;min-height:24px;
-}
+QHeaderView::section:first{border-top-left-radius:""" + r_small + """;}
+QHeaderView::section:last{border-top-right-radius:""" + r_small + """;border-right:none;}
+QScrollBar:vertical{background:""" + T['bg_app'] + """;width:""" + px(8) + """;border:none;border-radius:""" + r_tiny + """;}
+QScrollBar::handle:vertical{background:""" + T['border_hi'] + """;border-radius:""" + r_tiny + """;min-height:""" + px(20) + """;}
 QScrollBar::handle:vertical:hover{background:""" + T['accent'] + """;}
 QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{height:0;}
-QScrollBar:horizontal{
-    background:""" + T['bg_app'] + """;
-    height:9px;border-radius:4px;
-}
-QScrollBar::handle:horizontal{
-    background:""" + T['border_hi'] + """;border-radius:4px;
-}
+QScrollBar:horizontal{background:""" + T['bg_app'] + """;height:""" + px(8) + """;border-radius:""" + r_tiny + """;}
+QScrollBar::handle:horizontal{background:""" + T['border_hi'] + """;border-radius:""" + r_tiny + """;}
 QTabWidget::pane{
     border:1px solid """ + T['border'] + """;
     background:""" + T['bg_panel'] + """;
-    border-radius:0 10px 10px 10px;
+    border-radius:0 """ + r_medium + " " + r_medium + " " + r_medium + """;
 }
 QTabBar::tab{
     background:""" + T['bg_header'] + """;
     color:""" + T['text_secondary'] + """;
-    padding:8px 18px;
+    padding:""" + pad_tab + """;
     border:1px solid """ + T['border'] + """;
     border-bottom:none;
-    border-radius:8px 8px 0 0;
-    margin-right:2px;
-    font-size:12px;
+    border-radius:""" + r_small + " " + r_small + """ 0 0;
+    margin-right:""" + px(2) + """;
+    font-size:""" + fs_small + """;
 }
 QTabBar::tab:selected{
     background:""" + T['bg_panel'] + """;
     color:""" + T['accent'] + """;
     border-top:2px solid """ + T['accent'] + """;
-    font-weight:bold;font-size:13px;
+    font-weight:bold;font-size:""" + fs_normal + """;
 }
 QStatusBar{
     background:""" + T['bg_header'] + """;
     color:""" + T['text_secondary'] + """;
     border-top:1px solid """ + T['border'] + """;
-    font-size:12px;padding:5px 8px;
+    font-size:""" + fs_small + """;padding:""" + f"{px(4)} {px(7)}" + """;
 }
 QToolBar{
     background:""" + T['bg_panel'] + """;
     border-bottom:1px solid """ + T['border'] + """;
-    spacing:6px;padding:6px 12px;
+    spacing:""" + px(5) + """;padding:""" + pad_tb + """;
 }
-QToolBar::separator{background:""" + T['border'] + """;width:1px;margin:4px 8px;}
+QToolBar::separator{background:""" + T['border'] + """;width:1px;margin:""" + f"{px(3)} {px(6)}" + """;}
 QToolBar QToolButton{
     background-color:""" + T['accent'] + """;
     color:white;
     border:1px solid """ + T['accent_dark'] + """;
-    border-radius:11px;
-    padding:7px 14px;
+    border-radius:""" + r_medium + """;
+    padding:""" + f"{px(5)} {px(11)}" + """;
     font-weight:700;
-    font-size:13px;
-    min-height:32px;
+    font-size:""" + fs_normal + """;
+    min-height:""" + mh_tb_btn + """;
 }
-QToolBar QToolButton:hover{
-    background-color:""" + T['accent_dark'] + """;
-    border:1px solid """ + T['accent_dark'] + """;
-}
-QToolBar QToolButton:pressed{
-    background-color:""" + T['accent_dark'] + """;
-    padding-top:7px;   /* subtle "press" feel */
-    padding-bottom:5px;
-}
-"""
+QToolBar QToolButton:hover{background-color:""" + T['accent_dark'] + """;border:1px solid """ + T['accent_dark'] + """;}
+QToolBar QToolButton:pressed{background-color:""" + T['accent_dark'] + """;padding-top:""" + px(6) + """;padding-bottom:""" + px(4) + """;}
+""")
+
+
+SS = build_stylesheet()   # computed once at import time; rebuilt in MainWindow after app starts
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  CUSTOM COMBOBOX  — draws its own crisp chevron arrow
@@ -1548,7 +1559,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle('Wafer Map Viewer')
-        self.setStyleSheet(SS)
+        # Rebuild the stylesheet now that QApplication+screen exist and DPI is known.
+        self.setStyleSheet(build_stylesheet())
         self.setWindowIcon(make_app_icon())
         # Use available geometry so the window respects the taskbar on any display.
         screen = QApplication.primaryScreen()
@@ -1657,7 +1669,10 @@ class MainWindow(QMainWindow):
         tb.addWidget(self.lbl_file)
 
         cw = QWidget(); self.setCentralWidget(cw)
-        root = QVBoxLayout(cw); root.setSpacing(10); root.setContentsMargins(12, 12, 12, 12)
+        _s = _dpi_scale()
+        _m = max(6, round(12 / _s))   # outer margin
+        _sp = max(6, round(10 / _s))  # general spacing
+        root = QVBoxLayout(cw); root.setSpacing(_sp); root.setContentsMargins(_m, _m, _m, _m)
         self.main_tabs = QTabWidget()
         root.addWidget(self.main_tabs)
 
@@ -1668,10 +1683,10 @@ class MainWindow(QMainWindow):
 
         # ── left panel ────────────────────────────────────────────────────────
         left = QWidget()
-        left.setMinimumWidth(280)
-        left.setMaximumWidth(420)
+        left.setMinimumWidth(max(220, round(280 / _s)))
+        left.setMaximumWidth(max(280, round(380 / _s)))
         left.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
-        lv = QVBoxLayout(left); lv.setSpacing(14); lv.setContentsMargins(2, 2, 2, 2)
+        lv = QVBoxLayout(left); lv.setSpacing(max(8, round(14 / _s))); lv.setContentsMargins(2, 2, 2, 2)
 
         ib = QGroupBox('File Information')
         iform = QFormLayout(ib); iform.setSpacing(8)
@@ -1680,7 +1695,7 @@ class MainWindow(QMainWindow):
         def mkval():
             l = QLabel('—')
             l.setStyleSheet(
-                f'color:{T["text_primary"]};font-weight:700;font-size:14px;')
+                f'color:{T["text_primary"]};font-weight:700;font-size:{max(11, round(14 / _s))}px;')
             return l
 
         self.lbl_lot   = mkval(); self.lbl_sys   = mkval()
@@ -1702,7 +1717,7 @@ class MainWindow(QMainWindow):
 
         self.left_batch_btn = QPushButton('Load Batch Folder…')
         self.left_batch_btn.setObjectName('primary')
-        self.left_batch_btn.setMinimumHeight(34)
+        self.left_batch_btn.setMinimumHeight(max(26, round(34 / _s)))
         self.left_batch_btn.clicked.connect(self.open_batch_folder)
         lv.addWidget(self.left_batch_btn)
 
@@ -1720,7 +1735,7 @@ class MainWindow(QMainWindow):
         desc.setStyleSheet(f'color:{T["text_secondary"]};font-size:12px;')
         dv.addWidget(desc)
         self.design_combo = ArrowComboBox()
-        self.design_combo.setMinimumHeight(36)
+        self.design_combo.setMinimumHeight(max(26, round(36 / _s)))
         self.design_combo.currentIndexChanged.connect(self._on_design_changed)
         dv.addWidget(self.design_combo)
         lv.addWidget(db)
@@ -1729,7 +1744,7 @@ class MainWindow(QMainWindow):
         mb = QGroupBox('Measurement')
         mv = QVBoxLayout(mb); mv.setSpacing(8)
         self.mkey_combo = ArrowComboBox()
-        self.mkey_combo.setMinimumHeight(36)
+        self.mkey_combo.setMinimumHeight(max(26, round(36 / _s)))
         self.mkey_combo.currentTextChanged.connect(self._on_mkey_changed)
         mv.addWidget(self.mkey_combo)
         lv.addWidget(mb)
@@ -1805,8 +1820,8 @@ class MainWindow(QMainWindow):
 
         # ── right panel ───────────────────────────────────────────────────────
         right = QWidget()
-        right.setMinimumWidth(280)
-        right.setMaximumWidth(420)
+        right.setMinimumWidth(max(220, round(280 / _s)))
+        right.setMaximumWidth(max(280, round(400 / _s)))
         right.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         rv = QVBoxLayout(right); rv.setContentsMargins(0, 0, 0, 0)
         tabs = QTabWidget(); rv.addWidget(tabs)
@@ -1814,7 +1829,9 @@ class MainWindow(QMainWindow):
         self.detail_panel = SiteDetailPanel()
         self.stats_panel = StatsPanel()
         self.analytics_panel = QWidget()
-        av = QVBoxLayout(self.analytics_panel); av.setContentsMargins(10, 10, 10, 10); av.setSpacing(10)
+        av = QVBoxLayout(self.analytics_panel)
+        _ap = max(6, round(10 / _s))
+        av.setContentsMargins(_ap, _ap, _ap, _ap); av.setSpacing(_ap)
 
         top_row = QHBoxLayout(); top_row.setSpacing(6)
         self.continuous_heatmap_toggle = QCheckBox('Continuous heatmap')
@@ -1830,8 +1847,8 @@ class MainWindow(QMainWindow):
         dist_box = QGroupBox('Distribution')
         dv = QVBoxLayout(dist_box); dv.setContentsMargins(10, 10, 10, 10); dv.setSpacing(8)
         self.hist_panel = HistogramPanel()
-        self.hist_panel.setMinimumHeight(170)
-        self.hist_panel.setMaximumHeight(220)
+        self.hist_panel.setMinimumHeight(max(120, round(170 / _s)))
+        self.hist_panel.setMaximumHeight(max(150, round(200 / _s)))
         dv.addWidget(self.hist_panel)
         av.addWidget(dist_box)
 
@@ -1869,8 +1886,8 @@ class MainWindow(QMainWindow):
         raw_root = QHBoxLayout(self.raw_tab); raw_root.setSpacing(14); raw_root.setContentsMargins(10, 10, 10, 10)
 
         raw_left = QWidget()
-        raw_left.setMinimumWidth(220)
-        raw_left.setMaximumWidth(360)
+        raw_left.setMinimumWidth(max(180, round(220 / _s)))
+        raw_left.setMaximumWidth(max(240, round(320 / _s)))
         raw_left.setStyleSheet(f'background:{T["bg_panel"]};border:1px solid {T["border"]};border-radius:10px;')
         rlv = QVBoxLayout(raw_left); rlv.setSpacing(8); rlv.setContentsMargins(10, 10, 10, 10)
         raw_title = QLabel('Raw File Selection')
@@ -1946,16 +1963,16 @@ class MainWindow(QMainWindow):
         self.batch_load_btn.clicked.connect(self.open_batch_folder)
         ch.addWidget(self.batch_load_btn)
         self.batch_mkey_combo = ArrowComboBox()
-        self.batch_mkey_combo.setMinimumHeight(34)
+        self.batch_mkey_combo.setMinimumHeight(max(26, round(34 / _s)))
         self.batch_mkey_combo.currentTextChanged.connect(self._update_batch_table)
         ch.addWidget(self.batch_mkey_combo, stretch=1)
         self.batch_design_mode_combo = ArrowComboBox()
-        self.batch_design_mode_combo.setMinimumHeight(34)
+        self.batch_design_mode_combo.setMinimumHeight(max(26, round(34 / _s)))
         self.batch_design_mode_combo.addItem('All designs (aggregate)', None)
         self.batch_design_mode_combo.currentIndexChanged.connect(self._update_batch_table)
         ch.addWidget(self.batch_design_mode_combo)
         self.batch_sort_combo = ArrowComboBox()
-        self.batch_sort_combo.setMinimumHeight(34)
+        self.batch_sort_combo.setMinimumHeight(max(26, round(34 / _s)))
         self.batch_sort_combo.addItems(['Yield (high to low)', 'Yield (low to high)', 'Wafer name'])
         self.batch_sort_combo.currentTextChanged.connect(self._update_batch_table)
         ch.addWidget(self.batch_sort_combo)
@@ -1992,8 +2009,8 @@ class MainWindow(QMainWindow):
         self.batch_table.setSelectionMode(QTableWidget.ExtendedSelection)
         self.batch_table.verticalHeader().setVisible(False)
         self.batch_table.setShowGrid(False)
-        self.batch_table.setMinimumHeight(180)
-        self.batch_table.setMaximumHeight(260)
+        self.batch_table.setMinimumHeight(max(140, round(180 / _s)))
+        self.batch_table.setMaximumHeight(max(180, round(240 / _s)))
         self.batch_table.setSortingEnabled(False)
         self.batch_table.horizontalHeader().setSectionsClickable(False)
         self.batch_table.horizontalHeader().setSortIndicatorShown(False)
@@ -2012,7 +2029,7 @@ class MainWindow(QMainWindow):
         self.batch_radial_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.batch_radial_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.batch_radial_table.verticalHeader().setVisible(False)
-        self.batch_radial_table.setMaximumHeight(220)
+        self.batch_radial_table.setMaximumHeight(max(160, round(220 / _s)))
         self.batch_radial_table.setSortingEnabled(False)
         self.batch_radial_table.horizontalHeader().setSectionsClickable(False)
         self.batch_radial_table.horizontalHeader().setSortIndicatorShown(False)
@@ -2036,7 +2053,7 @@ class MainWindow(QMainWindow):
         self.batch_golden_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.batch_golden_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.batch_golden_table.verticalHeader().setVisible(False)
-        self.batch_golden_table.setMaximumHeight(220)
+        self.batch_golden_table.setMaximumHeight(max(160, round(220 / _s)))
         self.batch_golden_table.setSortingEnabled(False)
         self.batch_golden_table.horizontalHeader().setSectionsClickable(False)
         self.batch_golden_table.horizontalHeader().setSortIndicatorShown(False)
@@ -2062,7 +2079,7 @@ class MainWindow(QMainWindow):
             meta.setWordWrap(True)
             meta.setStyleSheet(f'font-size:11px;color:{T["text_secondary"]};')
             canvas = WaferCanvas()
-            canvas.setMinimumSize(300, 300)
+            canvas.setMinimumSize(max(220, round(300 / _s)), max(220, round(300 / _s)))
             cv.addWidget(title)
             cv.addWidget(meta)
             cv.addWidget(canvas, stretch=1)
@@ -3712,11 +3729,11 @@ def main():
         except Exception:
             pass
 
-    # Keep DPI scaling behavior stable across mixed Windows display settings
-    # (e.g., 100%, 125%, 150%) to reduce layout jitter/truncation.
+    # Let Qt use the exact DPI scale factor without rounding so our
+    # manual layout adjustments work at any scale (100 %, 125 %, 150 % …).
     try:
         QApplication.setHighDpiScaleFactorRoundingPolicy(
-            Qt.HighDpiScaleFactorRoundingPolicy.RoundPreferFloor
+            Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
         )
     except Exception:
         pass
