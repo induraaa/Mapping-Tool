@@ -28,8 +28,6 @@ Supports KDF files from Keithley ACS systems
 Export wafer maps as images
 Export to Excel for further analysis
 
-🖥️ Preview
-[ Add screenshots here — wafer map, histogram, UI panels ]
 ⚙️ Installation
 1. Clone the repository
 git clone https://github.com/yourusername/wafer-map-viewer.git
